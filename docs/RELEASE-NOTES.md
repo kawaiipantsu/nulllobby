@@ -1,6 +1,15 @@
-## NullLobby 0.4.1 — Linux preview
+## NullLobby 0.4.2
 
-This patch release packages the current Linux client and shared Rust core for publication and Debian installation. It includes the Linux TUI, theme and bot improvements from the 0.4.0 development preview; the version bump does not change the application protocol.
+This release includes the Linux client, shared Rust core and integrated XXC release-signing workflow. Its tagged source includes the signing tools and pinned public key, and all package/archive checksums are signed before publication. The chat protocol is unchanged.
+
+### New in 0.4.2
+
+- `make release` requires XXC signing and stops if signing or local verification fails. `make release-unsigned` is an explicit separate workflow.
+- Dedicated Ed25519 OpenPGP signatures with SHA-256 cover both release checksum manifests. The signing private key stays in XXC; API credentials remain outside the repository and packages.
+- `make verify-release` verifies downloads offline using the pinned public key, signature policy and artifact hashes. GnuPG keyserver lookups are disabled during verification.
+- The public key is available on the XXC exchange. The verification guide documents its SHA-256 pin, trust setup, expiry and rotation.
+- Tests cover tampered files/signatures, unrelated keys, unsafe credential permissions and malformed manifests.
+- An optional organization identity design is documented for review. It is a proposal; chat continues to use independent ephemeral per-lobby identities.
 
 ### Linux client
 
@@ -17,12 +26,14 @@ This patch release packages the current Linux client and shared Rust core for pu
 The standard package supports Direct and external Tor. The separately named experimental Arti package adds embedded Tor and its documented local service-storage patch. Both install `/usr/bin/nulllobby`; choose one package. External Tor remains the default Tor backend.
 
 ```sh
-sudo apt install ./nulllobby_0.4.1_amd64.deb
+sudo apt install ./nulllobby_0.4.2_amd64.deb
 nulllobby --version
 nulllobby --self-check
 ```
 
-Packages target Linux amd64 with glibc 2.39 or newer. They include guides, example themes and dependency license notices. Both require certificate roots; Arti additionally requires `libsqlite3-0` for Tor's directory cache. No service, account, chat database or automatic launch is installed. SHA-256 checksums accompany each artifact set.
+Packages target Linux amd64 with glibc 2.39 or newer. They include guides, example themes and dependency license notices. Both require certificate roots; Arti additionally requires `libsqlite3-0` for Tor's directory cache. No service, account, chat database or automatic launch is installed.
+
+Download the matching `SHA256SUMS` or `SHA256SUMS-arti`, its `.asc` signature, and the public verification key. Establish the public-key pin through a trusted channel and follow the [verification guide](https://github.com/kawaiipantsu/nulllobby/wiki/Release-Signing) before installing. `apt install ./file.deb` does not automatically verify detached signatures. A checkout of the v0.4.2 tag includes `make verify-release`; it checks all four package/archive artifacts downloaded into `dist/` and requires GnuPG, but no XXC credentials.
 
 ### Security and limits
 
@@ -34,8 +45,4 @@ Delivery acknowledgements, durable offline delivery, automatic NAT traversal, pr
 
 See the [Terminal guide](https://github.com/kawaiipantsu/nulllobby/wiki/Terminal), [Bot guide](https://github.com/kawaiipantsu/nulllobby/wiki/Bots), [Screenshots](https://github.com/kawaiipantsu/nulllobby/wiki/Screenshots) and [security model](https://github.com/kawaiipantsu/nulllobby/blob/main/SECURITY.md).
 
-### Release signatures added after publication
-
-On 2026-10-03 UTC, detached Ed25519/SHA-256 OpenPGP signatures were added for both checksum manifests using a dedicated release key in XXC Trust. The original v0.4.1 binaries, archives and checksum manifests are unchanged. The signing tooling and public-key pin were added in a later source commit; the v0.4.1 tag is unchanged.
-
-Download `SHA256SUMS.asc`, `SHA256SUMS-arti.asc`, `nulllobby-release-key.asc` and `nulllobby-release-key.sha256` alongside the original assets. Follow the [release verification guide](https://github.com/kawaiipantsu/nulllobby/wiki/Release-Signing), including establishing the public-key pin through a trusted channel. `apt install ./file.deb` does not automatically verify these detached signatures. This does not change lobby identity, encryption or privacy behavior.
+The [organization identity proposal](https://github.com/kawaiipantsu/nulllobby/blob/v0.4.2/docs/ORGANIZATION-IDENTITY.md) and [signing assessment](https://github.com/kawaiipantsu/nulllobby/blob/v0.4.2/docs/SIGNING-VERIFICATION.md) explain the trust boundaries and remaining design work.
