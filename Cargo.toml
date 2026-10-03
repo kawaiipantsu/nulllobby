@@ -23,11 +23,15 @@ secrecy = "0.10.3"
 zeroize = "1.9.0"
 thiserror = "2.0.21"
 tokio = { version = "1.53.2", default-features = false, features = ["io-util", "sync"] }
+snow = { version = "0.10.0", default-features = false, features = ["use-chacha20poly1305", "use-blake2", "use-curve25519", "use-getrandom"] }
+x25519-dalek = { version = "3.0.0", default-features = false, features = ["zeroize", "static_secrets"] }
+minicbor = { version = "2.3.0", features = ["std"] }
 libc = "0.2.190"
 toml_edit = "0.25.15"
 nulllobby-core = { path = "crates/nulllobby-core", version = "=0.1.0" }
 nulllobby-transport = { path = "crates/nulllobby-transport", version = "=0.1.0" }
 nulllobby-platform = { path = "crates/nulllobby-platform", version = "=0.1.0" }
+nulllobby-direct = { path = "crates/nulllobby-direct", version = "=0.1.0" }
 
 [workspace.lints.rust]
 unsafe_code = "deny"

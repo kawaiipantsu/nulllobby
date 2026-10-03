@@ -1,5 +1,6 @@
 //! Transport-neutral byte streams. There is no network implementation in Phase 1.
 #![forbid(unsafe_code)]
+pub mod framing;
 
 use std::{future::Future, net::IpAddr, num::NonZeroU16, pin::Pin};
 use thiserror::Error;
@@ -35,7 +36,7 @@ impl Endpoint {
 }
 
 /// Opaque, process-local handle; backends must reject handles from another scope.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub struct EndpointHandle(pub u64);
 
 pub trait ByteStream: AsyncRead + AsyncWrite + Unpin + Send {}

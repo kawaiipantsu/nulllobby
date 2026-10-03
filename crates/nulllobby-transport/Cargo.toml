@@ -7,7 +7,7 @@ publish.workspace = true
 license.workspace = true
 
 [dependencies]
-tokio.workspace = true
+tokio = { workspace = true, features = ["rt", "macros", "time"] }
 thiserror.workspace = true
 
 [lints]

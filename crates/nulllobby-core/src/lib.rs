@@ -5,7 +5,10 @@ pub mod branding;
 pub mod card;
 pub mod domain;
 pub mod identity;
+pub mod message;
+pub mod replay;
 pub mod secret;
+pub mod session;
 pub mod text;
 
 pub use card::LobbyCard;

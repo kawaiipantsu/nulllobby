@@ -2,7 +2,7 @@ use crate::{
     LobbyId, SecretError,
     secret::{NoiseStaticSecret, random_secret},
 };
-use ed25519_dalek::SigningKey;
+use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
 use nulllobby_platform::{HardeningStatus, SecretBytes};
 use sha2::{Digest, Sha256};
 use std::{fmt, str::FromStr};
@@ -13,6 +13,18 @@ pub struct EphemeralIdentity {
     noise_static: NoiseStaticSecret,
 }
 impl EphemeralIdentity {
+    pub(crate) fn noise_secret(&self) -> &[u8; 32] {
+        self.noise_static.expose_secret()
+    }
+    pub fn noise_public_key(&self) -> [u8; 32] {
+        let secret = x25519_dalek::StaticSecret::from(*self.noise_secret());
+        x25519_dalek::PublicKey::from(&secret).to_bytes()
+    }
+    pub(crate) fn sign(&self, bytes: &[u8]) -> [u8; 64] {
+        SigningKey::from_bytes(self.seed.expose_secret())
+            .sign(bytes)
+            .to_bytes()
+    }
     /// Each join generates independent OS randomness; nothing is derived from a master key.
     pub fn generate(lobby: LobbyId) -> Result<Self, SecretError> {
         Ok(Self {
@@ -36,6 +48,16 @@ impl EphemeralIdentity {
     pub fn memory_status(&self) -> [HardeningStatus; 2] {
         [self.seed.lock_status(), self.noise_static.lock_status()]
     }
+}
+
+pub(crate) fn verify(key: &[u8; 32], bytes: &[u8], signature: &[u8; 64]) -> bool {
+    let Ok(key) = VerifyingKey::from_bytes(key) else {
+        return false;
+    };
+    !key.is_weak()
+        && key
+            .verify_strict(bytes, &Signature::from_bytes(signature))
+            .is_ok()
 }
 impl fmt::Debug for EphemeralIdentity {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

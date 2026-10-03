@@ -1,5 +1,8 @@
 //! Phase 1 only: BEP 3 handshake codec. No TCP, DHT or BEP 10 negotiation.
 #![forbid(unsafe_code)]
+pub mod extension;
+mod transport;
+pub use transport::{DirectConfig, DirectTransport};
 
 pub const HANDSHAKE_BYTES: usize = 68;
 const PROTOCOL: &[u8; 19] = b"BitTorrent protocol";

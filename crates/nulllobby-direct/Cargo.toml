@@ -9,6 +9,9 @@ license.workspace = true
 [dependencies]
 getrandom.workspace = true
 thiserror.workspace = true
+tokio = { workspace = true, features = ["net", "rt", "macros", "time"] }
+nulllobby-transport.workspace = true
+bendy = "0.6.1"
 
 [lints]
 workspace = true
