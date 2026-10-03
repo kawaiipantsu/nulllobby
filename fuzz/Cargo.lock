@@ -476,7 +476,7 @@ dependencies = [
 
 [[package]]
 name = "nulllobby-core"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "base64",
  "ed25519-dalek",
@@ -497,7 +497,7 @@ dependencies = [
 
 [[package]]
 name = "nulllobby-direct"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "bendy",
  "getrandom 0.4.3",
@@ -521,7 +521,7 @@ dependencies = [
 
 [[package]]
 name = "nulllobby-platform"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "libc",
  "secrecy",
@@ -530,7 +530,7 @@ dependencies = [
 
 [[package]]
 name = "nulllobby-tor"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "data-encoding",
  "getrandom 0.4.3",
@@ -545,7 +545,7 @@ dependencies = [
 
 [[package]]
 name = "nulllobby-transport"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "thiserror",
  "tokio",
