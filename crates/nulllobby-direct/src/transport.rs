@@ -255,7 +255,7 @@ impl Transport for DirectTransport {
 }
 impl Drop for Listener {
     fn drop(&mut self) {
-        let _ = self.close.send(true);
+        self.close.send_replace(true);
     }
 }
 
@@ -316,6 +316,9 @@ fn bridge(
 ) -> BoxStream {
     let (client, adapter) = tokio::io::duplex(65_536);
     let task = tokio::spawn(async move {
+        if *close.borrow() {
+            return;
+        }
         let (mut net_read, mut net_write) = socket.into_split();
         let (mut app_read, mut app_write) = tokio::io::split(adapter);
         let send = async {

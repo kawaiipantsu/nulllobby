@@ -192,7 +192,9 @@ impl State {
                 .borders(Borders::ALL)
                 .title("Messages · RAM only · PgUp/PgDn"),
         );
-        let line_count = messages.line_count(cols[1].width.saturating_sub(2));
+        let line_count = messages
+            .line_count(cols[1].width.saturating_sub(2))
+            .saturating_sub(2);
         let offset = line_count
             .saturating_sub(cols[1].height.saturating_sub(2) as usize)
             .min(u16::MAX as usize) as u16;

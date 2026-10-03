@@ -52,7 +52,7 @@ struct Listener {
 }
 impl Drop for Listener {
     fn drop(&mut self) {
-        let _ = self.close.send(true);
+        self.close.send_replace(true);
     }
 }
 type Closers = Arc<StdMutex<HashMap<EndpointHandle, watch::Sender<bool>>>>;
@@ -191,7 +191,7 @@ impl Transport for TorTransport {
                         active.store(false, Ordering::Release);
                         if let Ok(entries) = closers.lock() {
                             for close in entries.values() {
-                                let _ = close.send(true);
+                                close.send_replace(true);
                             }
                         }
                         break;
@@ -289,7 +289,7 @@ impl Transport for TorTransport {
                 .endpoints
                 .remove(&local)
                 .ok_or(TransportError::Unavailable)?;
-            let _ = entry.close.send(true);
+            entry.close.send_replace(true);
             self.closers
                 .lock()
                 .map_err(|_| TransportError::Unavailable)?

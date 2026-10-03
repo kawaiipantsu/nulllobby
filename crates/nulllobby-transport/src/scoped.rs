@@ -27,6 +27,9 @@ impl ScopedStream {
     ) -> BoxStream {
         let (io, mut adapter) = tokio::io::duplex(65_536);
         let task = tokio::spawn(async move {
+            if *close.borrow() {
+                return;
+            }
             tokio::select! { _ = tokio::io::copy_bidirectional(&mut stream, &mut adapter) => {}, _ = close.changed() => {} }
         });
         Box::new(Self {
@@ -74,5 +77,36 @@ impl AsyncWrite for ScopedStream {
     }
     fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         Pin::new(&mut self.io).poll_shutdown(cx)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{ModePolicy, TransportKind};
+    use std::{sync::Arc, time::Duration};
+    use tokio::{io::AsyncReadExt, sync::Semaphore};
+    #[tokio::test]
+    async fn close_before_subscription_cannot_admit_a_new_stream() {
+        let (close, receiver) = watch::channel(false);
+        drop(receiver);
+        close.send_replace(true);
+        let (stream, _other) = tokio::io::duplex(8);
+        let pending = Arc::new(Semaphore::new(1)).acquire_owned().await.unwrap();
+        let mut stream = ScopedStream::wrap(
+            stream,
+            close.subscribe(),
+            vec![],
+            pending,
+            Arc::new(ModePolicy(TransportKind::Tor)),
+        );
+        let mut byte = [0; 1];
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(1), stream.read(&mut byte))
+                .await
+                .unwrap()
+                .unwrap(),
+            0
+        );
     }
 }

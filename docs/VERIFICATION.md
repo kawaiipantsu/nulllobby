@@ -8,7 +8,7 @@ Version **0.2.0**, checked on 2026-10-03. These are implementation checks, not a
 |---|---|
 | `cargo fmt --check` | Passed |
 | `cargo clippy --workspace --all-targets --all-features -- -D warnings` | Passed |
-| `cargo test --workspace` | 57 passed; two external-network tests ignored by default |
+| `cargo test --workspace` | 58 passed; two external-network tests ignored by default |
 | Experimental Arti unavailable-boundary test | Passed separately with all features |
 | `cargo audit` | No known vulnerabilities in the 175-package locked dependency graph |
 | `cargo deny check` | Advisories, licenses, sources and bans passed; reviewed duplicate-version warnings remain |
