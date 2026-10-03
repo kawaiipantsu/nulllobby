@@ -1,0 +1,12 @@
+# Original irssi-compatible example for the supported NullLobby roles.
+default_color = "-1";
+abstracts = {
+  window_border = "%b";
+  sb_background = "%4%w";
+  timestamp = "%Z708399$*";
+  hilight = "%_%Z5EE7D7$*%n";
+  error = "%R$*%n";
+  pubnick = "%Z5EE7D7$*%n";
+  ownnick = "%M$*%n";
+  menick = "%Y$*%n";
+};

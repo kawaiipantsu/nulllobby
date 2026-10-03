@@ -17,7 +17,7 @@
 
 Phase 9 uses the existing Tor core/protocol with separate RAM-only service state. Review the local patch with upstream and extend soak/interoperability coverage before treating embedded Arti as stable. External Tor remains available independently.
 
-The next requested product work is a Linux UX pass: compact pasted blocks, timestamps and day separators, panel/menu shortcuts, optional Nerd Font icons, themes and bounded irssi-theme import, clearer connection/privacy status, dismissible welcome/help/notification overlays, and opt-in remembered preferences/lobbies/autoconnect. Identities, trust and history remain ephemeral. Bot mode with local and explicitly selected cloud model providers is also requested; it must preserve transport privacy and clearly disclose the bot/provider boundary.
+The Linux UX pass is implemented: compact paste, timestamps/day separators, panel/menu shortcuts, optional Nerd Font icons, palettes and bounded irssi color/style import, connection/privacy status, dismissible overlays, and opt-in remembered public lobbies/autoconnect. Identities, trust and history remain ephemeral. Headless bots support local models and explicitly enabled OpenAI/Claude APIs; cloud providers are disabled in Tor mode. See the Terminal and Bots guides for compatibility and data-handling limits.
 
 The shared Iced Windows/macOS desktop client (Phase 10) remains deferred until requested. It will reuse the current core and command/event boundary.
 

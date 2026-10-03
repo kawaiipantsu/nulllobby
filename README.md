@@ -54,6 +54,24 @@ Share the explicitly revealed card through an appropriate channel. Another parti
 
 Public lobbies default to **unlisted**, with random 256-bit IDs. Discoverable lobbies are Direct-only, can be enumerated, and require an explicit warning confirmation. Private lobbies use random capabilities, not passwords. Transport changes require leaving all lobbies. `/invite` displays a card without copying it to the clipboard; Esc hides it. Terminal scrollback and clipboard managers are outside the application's boundary.
 
+## Terminal experience
+
+![NullLobby chat with synthetic demonstration content](assets/screenshots/chat.png)
+
+*Current UI rendered with synthetic demo content. [More screenshots](docs/wiki/Screenshots.md).*
+
+F1 opens help, F2/F3 toggle sidebars, F4 opens settings, F6 previews pasted blocks, and F7 shows notifications. Chat starts empty; overlays fill the screen below the top menu. Timestamps, midnight separators, ASCII/Unicode borders, optional Nerd Font icons and five palettes are available.
+
+`/invite` keeps cards as one logical copyable line with native terminal wrapping. Ctrl+Y explicitly requests clipboard copy when supported; nothing is copied automatically.
+
+Use `/theme ember`, load a native palette, or import irssi colors/styles directly with `/theme /path/to/favorite.theme`. The importer supports 16/256/RGB colors and common styles; IRC templates and layouts are not reproduced. See the [terminal/theme guide](docs/wiki/Terminal.md).
+
+Remembered nicknames, public cards and autoconnect are **opt-in**. Keys, trust, private invites and history stay in RAM. Reused nicknames/cards can correlate activity. Welcome dismissal persists only with settings enabled; `--no-welcome` skips it.
+
+Headless [bots](docs/wiki/Bots.md) support local models and explicitly enabled OpenAI/Claude APIs. Only addressed prompts reach the provider. Cloud providers are disabled in Tor mode.
+
+![Full-screen settings with the ember palette](assets/screenshots/settings.png)
+
 ## Direct and Tor
 
 | Mode | Session status | Exposure |
@@ -88,6 +106,7 @@ An **experimental embedded Arti backend** is available with `make build-arti` an
 ```text
 apps/nulllobby-tui          Ratatui/Crossterm presentation and input
 crates/nulllobby-app        Bounded command/event runtime and lobby workers
+crates/nulllobby-bot        Addressed, bounded local/cloud model bots
 crates/nulllobby-core       Identities, Noise, signed CBOR, replay, cards and trust
 crates/nulllobby-transport  Async byte streams, framing, limits and network policy
 crates/nulllobby-direct     BitTorrent, BEP 10 and bounded BEP 5 discovery

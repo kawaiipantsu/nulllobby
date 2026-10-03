@@ -1,7 +1,7 @@
-.PHONY: help build build-arti test check deb deb-arti bump-major bump-minor bump-patch release clean
+.PHONY: help build build-arti test check deb deb-arti screenshots bump-major bump-minor bump-patch release clean
 
 help:
-	@echo 'build | build-arti | test | check | deb | deb-arti | bump-major | bump-minor | bump-patch | release | fuzz-smoke | clean'
+	@echo 'build | build-arti | test | check | deb | deb-arti | screenshots | bump-major | bump-minor | bump-patch | release | fuzz-smoke | clean'
 
 build:
 	cargo xtask build
@@ -35,6 +35,9 @@ release:
 
 clean:
 	cargo clean
+
+screenshots:
+	cargo xtask screenshots
 
 .PHONY: fuzz-smoke
 fuzz-smoke:

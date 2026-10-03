@@ -18,11 +18,16 @@ nulllobby-core.workspace = true
 nulllobby-platform.workspace = true
 nulllobby-transport.workspace = true
 nulllobby-app.workspace = true
+nulllobby-bot.workspace = true
 ratatui = { version = "0.30.2", default-features = false, features = ["crossterm_0_29", "unstable-rendered-line-info"] }
-crossterm = { version = "0.29.0", default-features = false, features = ["events"] }
+crossterm = { version = "0.29.0", default-features = false, features = ["events", "bracketed-paste"] }
 tokio = { workspace = true, features = ["rt-multi-thread"] }
 secrecy.workspace = true
 zeroize.workspace = true
+chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
+toml_edit.workspace = true
+unicode-width = "0.2.2"
+base64.workspace = true
 
 [lints]
 workspace = true

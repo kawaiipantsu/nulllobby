@@ -40,7 +40,11 @@ Public encryption does not prove that a first-seen key belongs to a named person
 
 ## RAM-only application state
 
-Independent per-lobby Ed25519 seeds and Noise static material are generated afresh. Restart means new fingerprints. Trust, history, nicknames, invitations and endpoint history must disappear at exit. There is no persistence option in v1.
+Independent per-lobby Ed25519 seeds and Noise static material are generated afresh. Restart means new fingerprints. Trust, history, private invitations and identity secrets disappear at exit.
+
+Optional remembered preferences save a nickname, appearance settings and explicitly selected public lobby cards/seeds with autoconnect flags. Defaults write none of this. Saved metadata can correlate activity even though keys rotate. Private capabilities cannot be saved. See the Terminal guide for opting in, deleting preferences and first-start behavior.
+
+Optional bots send only explicitly addressed prompts to the selected provider. Cloud APIs require explicit opt-in and are disabled in Tor mode. Local loopback models are supported; the model service's own retention/network behavior is outside NullLobby. See the Bots guide.
 
 `mlock` and zeroization reduce exposure but do not cover all temporary copies, kernel buffers, physical acquisition or a compromised endpoint. Terminal scrollback and clipboard managers are outside the security boundary. Never copy a private invite to the clipboard automatically. Even explicit invite display may leave a terminal record.
 

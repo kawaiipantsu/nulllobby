@@ -5,6 +5,9 @@ A RAM-first decentralized encrypted lobby chat client created by Kawaiipantsu fo
 The Linux preview implements Direct and external Tor transports, Noise encryption, independent lobby identities, signed gossip and fingerprint verification. Direct exposes peer IPs. Tor uses onion services and never falls back to Direct. Identities, trust and history disappear at process exit. No independent professional security audit has yet been completed.
 
 - [Getting started](Getting-Started)
+- [Terminal and irssi themes](Terminal)
+- [Screenshots](Screenshots)
+- [Local and cloud bots](Bots)
 - [External Tor setup](Tor)
 - [Architecture and renaming](Architecture)
 - [Protocol v1](Protocol)

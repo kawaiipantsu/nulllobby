@@ -37,6 +37,7 @@ fn run() -> Result<()> {
         ["deb-arti"] => deb(true),
         ["check"] => check(),
         ["fuzz-smoke"] => fuzz_smoke(),
+        ["screenshots"] => screenshots(),
         ["bump", level] => bump(level),
         ["release"] => release(),
         ["announce", tag] => announce(tag),
@@ -44,6 +45,39 @@ fn run() -> Result<()> {
             Err("use: cargo xtask build|deb|check|bump major|bump minor|bump patch|release".into())
         }
     }
+}
+fn screenshots() -> Result<()> {
+    let directory = "target/docs-screenshots";
+    let status = Command::new("cargo")
+        .args([
+            "test",
+            "--locked",
+            "-p",
+            "nulllobby-tui",
+            "render_documentation",
+            "--",
+            "--ignored",
+        ])
+        .env(
+            "NULLLOBBY_SCREENSHOT_DIR",
+            std::env::current_dir()?.join(directory),
+        )
+        .status()?;
+    if !status.success() {
+        return Err("screenshot renderer failed".into());
+    }
+    fs::create_dir_all("assets/screenshots")?;
+    for name in ["chat", "irssi", "help", "settings"] {
+        command(
+            "rsvg-convert",
+            &[
+                &format!("{directory}/{name}.svg"),
+                "-o",
+                &format!("assets/screenshots/{name}.png"),
+            ],
+        )?;
+    }
+    Ok(())
 }
 fn command(program: &str, args: &[&str]) -> Result<()> {
     if !Command::new(program).args(args).status()?.success() {
@@ -155,6 +189,23 @@ fn deb(arti: bool) -> Result<()> {
     for file in ["README.md", "SECURITY.md", "LICENSE"] {
         fs::copy(file, stage.join("usr/share/doc/nulllobby").join(file))?;
     }
+    for file in ["docs/wiki/Terminal.md", "docs/wiki/Bots.md"] {
+        fs::copy(
+            file,
+            stage.join("usr/share/doc/nulllobby").join(
+                Path::new(file)
+                    .file_name()
+                    .ok_or("missing guide filename")?,
+            ),
+        )?;
+    }
+    fs::create_dir_all(stage.join("usr/share/nulllobby/themes"))?;
+    for name in ["ember.toml", "nulllobby.theme"] {
+        fs::copy(
+            Path::new("themes").join(name),
+            stage.join("usr/share/nulllobby/themes").join(name),
+        )?;
+    }
     fs::copy(
         "packaging/copyright",
         stage.join("usr/share/doc/nulllobby/copyright"),
@@ -190,7 +241,7 @@ fn deb(arti: bool) -> Result<()> {
     fs::write(
         stage.join("DEBIAN/control"),
         format!(
-            "Package: {package}\nVersion: {version}\nSection: net\nPriority: optional\nArchitecture: amd64\nMaintainer: NullLobby maintainers\nDepends: libc6 (>= {minimum}), libgcc-s1{libraries}\nSuggests: tor\n{extra}Homepage: https://thugs.red\nDescription: RAM-first encrypted decentralized lobby chat\n Linux terminal client with signed messages, Direct P2P and Tor onion transport.\n Embedded Arti support in this package: {arti}.\n"
+            "Package: {package}\nVersion: {version}\nSection: net\nPriority: optional\nArchitecture: amd64\nMaintainer: NullLobby maintainers\nDepends: libc6 (>= {minimum}), libgcc-s1, ca-certificates{libraries}\nSuggests: tor\n{extra}Homepage: https://thugs.red\nDescription: RAM-first encrypted decentralized lobby chat\n Linux terminal client with signed messages, Direct P2P and Tor onion transport.\n Embedded Arti support in this package: {arti}.\n"
         ),
     )?;
     fs::create_dir_all("dist")?;

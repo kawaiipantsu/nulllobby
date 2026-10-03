@@ -30,3 +30,30 @@ fn unsupported_arguments_are_never_echoed() {
             .contains("sensitive-input-canary")
     );
 }
+
+#[test]
+fn cloud_bot_is_rejected_in_tor_before_key_or_stdin_access() {
+    let output = Command::new(env!("CARGO_BIN_EXE_nulllobby"))
+        .args([
+            "--transport",
+            "tor",
+            "--bot",
+            "--bot-name",
+            "helper",
+            "--bot-provider",
+            "openai",
+            "--bot-model",
+            "synthetic",
+            "--allow-cloud",
+            "--bot-card-stdin",
+        ])
+        .env_remove("OPENAI_API_KEY")
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8(output.stderr)
+            .unwrap()
+            .contains("Cloud bots are disabled in Tor mode")
+    );
+}

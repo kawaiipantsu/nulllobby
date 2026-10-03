@@ -1,0 +1,12 @@
+# Original NullLobby palette.
+[colors]
+background = "#161010"
+text = "#F2E0CF"
+border = "#9D7A6B"
+accent = "#FFA861"
+muted = "#9D7A6B"
+warning = "yellow"
+error = "lightred"
+nick = "#FFA861"
+own = "lightmagenta"
+status = "#F2E0CF"

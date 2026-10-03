@@ -1,5 +1,7 @@
 # Getting started
 
+For keyboard shortcuts, compact paste, themes (including irssi import), optional remembered public lobbies and autoconnect, see [Terminal and themes](Terminal). Headless local/OpenAI/Claude setup is in [Bots](Bots).
+
 NullLobby is a Linux terminal preview. Direct, external Tor, Noise sessions, signed gossip and manual fingerprint verification are implemented. There is no independent professional security audit.
 
 ## Build

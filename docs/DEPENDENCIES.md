@@ -16,10 +16,13 @@ Reviewed on 2026-10-03 using current Cargo registry releases, downloaded source 
 | minicbor | 2.3.0 | Manual definite-length canonical CBOR, fixed arrays and bounds; no hostile serde deserialization |
 | base64 | 0.23.1 | Strict URL-safe, no-padding card codec; optional unsafe SIMD disabled |
 | data-encoding / sha3 | 2.11.1 / 0.12.0 | Tor's specified v3 Base32 and SHA3 address checksum only |
-| ratatui / crossterm | 0.30.2 / 0.29.0 | Linux TUI. Ratatui defaults reduced to Crossterm and rendered-line-count support for scrolling; no OSC52 clipboard feature |
+| ratatui / crossterm | 0.30.2 / 0.29.0 | Linux TUI, bracketed paste and rendered-line counts. Explicit Ctrl+Y in a revealed invitation requests OSC52 copy; remote text is never interpreted as terminal commands |
 | libc | 0.2.190 | Isolated Linux FFI for private mappings, mlock and core-dump controls |
 | thiserror | 2.0.21 | Fixed public error categories, no payload reflection |
-| toml_edit | 0.25.15 | Developer tooling only; consistent workspace/lockfile version bumps |
+| toml_edit | 0.25.15 | Version tooling and opt-in bounded settings/palettes; unknown settings rejected |
+| chrono / unicode-width | 0.4.45 / 0.2.2 | Local display dates/time and cursor columns; no security decisions use these timestamps |
+| reqwest / rustls | 0.13.5 / 0.23.45 | Bot HTTP only; explicit ring provider, reduced features, no redirects/proxies; fixed cloud URLs or literal loopback |
+| serde_json | 1.0.151 | Bot JSON capped at 64 KiB; default recursion limit retained and extracted output bounded |
 | cargo-fuzz / libfuzzer-sys | 0.13.2 / 0.4.13 | Separate developer fuzz graph; Rust wrappers, standard libFuzzer engine |
 
 ## Crypto review
@@ -39,6 +42,8 @@ External Tor integration follows the [ControlPort](https://spec.torproject.org/c
 Arti 0.47.0 is implemented behind `tor-arti-experimental`, using an isolated local service-storage patch. Each lobby uses a distinct RAM-only key store and replay filter while normal Tor guards/cache persist. The graph, upstream API, maintenance advisories and license additions are reviewed in [ARTI-DEPENDENCIES.md](ARTI-DEPENDENCIES.md). No desktop dependency tree is included.
 
 ## License and advisory gates
+
+The bot adds reqwest 0.13.5 with reduced Rustls features and the maintained platform certificate verifier. Its browser-only certificate-data dependency, webpki-root-certs 1.0.9, uses CDLA-Permissive-2.0. Reviewed terms permit use/modification/sharing with the license retained and disclaim warranties; a package/version-scoped license exception covers the cross-target graph. It is not linked into the Linux binary. No TLS verification bypass is enabled.
 
 `cargo audit` and `cargo deny check` scan the locked application graph. Duplicate versions arise from upstream crypto/proc-macro/TUI constraints and are warnings, not suppressed advisories. The license allowlist includes the existing project/crypto/TUI licenses and the reviewed Arti additions documented in ARTI-DEPENDENCIES.md; see `deny.toml` for exact identifiers. Fuzz-only libFuzzer additionally uses NCSA; it is outside shipped binaries. Rust packaging bundles the actual target's dependency license texts.
 

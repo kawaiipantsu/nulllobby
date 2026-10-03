@@ -2,6 +2,9 @@
 
 - [Home](Home)
 - [Getting started](Getting-Started)
+- [Terminal and themes](Terminal)
+- [Screenshots](Screenshots)
+- [Bots](Bots)
 - [Tor setup](Tor)
 - [Architecture](Architecture)
 - [Protocol](Protocol)

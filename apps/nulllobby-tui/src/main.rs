@@ -1,4 +1,9 @@
 #![forbid(unsafe_code)]
+mod bot_cli;
+mod input;
+mod invite;
+mod settings;
+mod theme;
 mod ui;
 use nulllobby_app::{App, Config};
 use nulllobby_core::{EphemeralIdentity, LobbyCard, LobbyId, branding};
@@ -13,6 +18,7 @@ fn main() -> ExitCode {
         let _ = crossterm::terminal::disable_raw_mode();
         let _ = crossterm::execute!(
             std::io::stderr(),
+            crossterm::event::DisableBracketedPaste,
             crossterm::terminal::LeaveAlternateScreen,
             crossterm::cursor::Show
         );
@@ -37,9 +43,16 @@ fn run(hardening: HardeningStatus) -> Result<(), &'static str> {
     let mut tor_backend = "external";
     let mut arti_state = None;
     let mut arti_cache = None;
+    let mut settings_path = None;
+    let mut theme_override = None;
+    let mut no_welcome = false;
+    let mut bot_args = bot_cli::Args::default();
     let mut args = args.iter();
     while let Some(arg) = args.next() {
         let option = arg.to_str().ok_or("Invalid option; use --help")?;
+        if bot_args.parse(option, &mut args)? {
+            continue;
+        }
         match option {
             "--help" | "-h" | "--version" | "--about" | "--security" | "--self-check" => {
                 if diagnostic.replace(option).is_some() {
@@ -68,6 +81,20 @@ fn run(hardening: HardeningStatus) -> Result<(), &'static str> {
                 });
             }
             "--no-dht" => config.no_dht = true,
+            "--settings" => {
+                settings_path = Some(std::path::PathBuf::from(
+                    args.next().ok_or("--settings requires a path")?,
+                ))
+            }
+            "--theme" => {
+                theme_override = Some(
+                    args.next()
+                        .and_then(|s| s.to_str())
+                        .ok_or("--theme requires a palette or path")?
+                        .to_owned(),
+                )
+            }
+            "--no-welcome" => no_welcome = true,
             "--tor-backend" => {
                 tor_backend = match args.next().and_then(|s| s.to_str()) {
                     Some("external") => "external",
@@ -149,7 +176,7 @@ fn run(hardening: HardeningStatus) -> Result<(), &'static str> {
     if let Some(option) = diagnostic {
         match option {
             "--help" | "-h" => println!(
-                "{} {}\n\nRun without options for the terminal client.\n--transport direct|tor\n--listen IP:PORT          Direct listener (default random port)\n--peer IP:PORT            Explicit Direct peer (up to 8)\n--no-dht                  Direct localhost/developer mode\n--tor-socks 127.0.0.1:9050\n--tor-control 127.0.0.1:9051\n--tor-cookie PATH         Explicit SAFECOOKIE authentication file\n--tor-backend external|arti (Arti requires experimental build)\n--arti-state PATH         Durable Tor guard state (absolute)\n--arti-cache PATH         Tor directory cache (absolute)\n--help --version --about --security --self-check\n\nDirect exposes peer IPs. Tor never falls back to Direct. Application state is RAM only.",
+                "{} {}\n\nRun without options for the terminal client.\n--transport direct|tor\n--listen IP:PORT          Direct listener (default random port)\n--peer IP:PORT            Explicit Direct peer (up to 8)\n--no-dht                  Direct localhost/developer mode\n--tor-socks 127.0.0.1:9050\n--tor-control 127.0.0.1:9051\n--tor-cookie PATH         Explicit SAFECOOKIE authentication file\n--tor-backend external|arti (Arti requires experimental build)\n--arti-state PATH         Durable Tor guard state (absolute)\n--arti-cache PATH         Tor directory cache (absolute)\n--help --version --about --security --self-check\n\nDirect exposes peer IPs. Tor never falls back to Direct. Identity keys, trust and chat history stay in RAM.",
                 branding::PROJECT,
                 env!("CARGO_PKG_VERSION")
             ),
@@ -181,6 +208,11 @@ fn run(hardening: HardeningStatus) -> Result<(), &'static str> {
             }
             _ => return Err("Unsupported diagnostic"),
         }
+        if matches!(option, "--help" | "-h") {
+            println!(
+                "\nAppearance:\n--theme NAME|PATH          Built-in palette, palette TOML or irssi .theme\n--settings PATH           Opt in to saved preferences (0600)\n--no-welcome              Skip the welcome overlay\nF1 help, F4 settings, F6 paste preview. Chat starts empty.\n\nHeadless bot:\n--bot --bot-name NAME --bot-provider local|openai|claude --bot-model MODEL\n--bot-card-stdin          Read invitation from stdin until EOF\n--bot-create public|private --bot-lobby-name NAME\n--bot-export-invite       Explicitly print invitation to stdout\n--bot-endpoint URL        Local model at a literal loopback IP\n--bot-max-requests N      Session quota, default 100 (maximum 10000)\n--allow-cloud             Permit addressed prompts to leave the lobby\nCloud providers use OPENAI_API_KEY / ANTHROPIC_API_KEY; disabled in Tor mode.\nBots answer only @NAME prompts, one at a time, at most once per 5 seconds.\n\nSaving preferences is optional: nickname, theme, public cards and autoconnect.\nIdentity keys, trust, private invitations and chat history stay in RAM."
+            );
+        }
         return Ok(());
     }
     if hardening != HardeningStatus::Active {
@@ -189,6 +221,22 @@ fn run(hardening: HardeningStatus) -> Result<(), &'static str> {
     if config.mode == TransportKind::Tor && !config.peers.is_empty() {
         return Err("--peer is Direct-only; Tor peers come from onion lobby cards");
     }
+    let bot = bot_args.build(config.mode)?;
+    let mut preferences = if bot.is_some() {
+        settings::Settings::default()
+    } else {
+        settings::Settings::load(settings_path)?
+    };
+    if let Some(theme) = theme_override {
+        if theme.len() > 512 {
+            return Err("Theme path exceeds 512 bytes");
+        }
+        preferences.theme = theme;
+    }
+    if no_welcome {
+        preferences.welcome_seen = true;
+    }
+    let mode = config.mode;
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
         .enable_all()
@@ -208,8 +256,14 @@ fn run(hardening: HardeningStatus) -> Result<(), &'static str> {
     }
     let (events, ev_rx) = nulllobby_transport::event_channel();
     let task = runtime.spawn(App::new(config, rx, events).run());
-    let result = ui::run(commands, ev_rx)
-        .map_err(|_| "Terminal unavailable; run in an interactive terminal or use --help");
+    let shutdown = commands.clone();
+    let result = if let Some((bot, start, export)) = bot {
+        runtime.block_on(bot.run(commands, ev_rx, start, export))
+    } else {
+        ui::run(commands, ev_rx, preferences, mode)
+            .map_err(|_| "Terminal unavailable; run in an interactive terminal or use --help")
+    };
+    let _ = shutdown.try_send(nulllobby_core::domain::AppCommand::Shutdown);
     runtime.block_on(async {
         if tokio::time::timeout(std::time::Duration::from_secs(10), task)
             .await

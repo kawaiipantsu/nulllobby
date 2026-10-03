@@ -241,7 +241,32 @@ impl App {
         if self.config.mode == TransportKind::Tor && self.arti.is_some() {
             self.notice("EXPERIMENTAL ARTI / ONION TRANSPORT / RAM-only lobby services; normal Tor guards/cache persist").await;
         }
-        transport.start().await.map_err(|_| "Transport unavailable; check the selected backend configuration and /network. No fallback was attempted.")?;
+        let _ = self
+            .events
+            .send(AppEvent::TransportStatus {
+                transport: self.config.mode,
+                status: nulllobby_transport::NetworkStatus::Starting,
+            })
+            .await;
+        if transport.start().await.is_err() {
+            let _ = self
+                .events
+                .send(AppEvent::TransportStatus {
+                    transport: self.config.mode,
+                    status: nulllobby_transport::NetworkStatus::Unavailable,
+                })
+                .await;
+            return Err(
+                "Transport unavailable; check the selected backend configuration and /network. No fallback was attempted.",
+            );
+        }
+        let _ = self
+            .events
+            .send(AppEvent::TransportStatus {
+                transport: self.config.mode,
+                status: nulllobby_transport::NetworkStatus::Ready,
+            })
+            .await;
         let (card, local) = if self.config.mode == TransportKind::Tor && card.is_none() {
             let local = transport
                 .create_endpoint([0; 32])
@@ -510,7 +535,6 @@ impl App {
         }
     }
     pub async fn run(mut self) {
-        self.notice("NullLobby — RAM-only Linux client. /help lists commands. Direct exposes your IP to peers. Use /transport tor before creating or joining onion lobbies.").await;
         self.view().await;
         loop {
             tokio::select! {
