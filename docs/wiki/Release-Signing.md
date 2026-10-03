@@ -6,6 +6,26 @@ This is maintainer tooling in Rust `xtask`. It is not part of the chat client. N
 
 Publishing the public key on XXC's exchange is optional. It allows discovery and GPG keyserver retrieval; it also exposes every public user ID and does not independently authenticate the publisher. Release downloads already carry the public key. Enrollment leaves exchange publication disabled. Compare the SHA-256 pin through a trusted channel regardless of where you retrieve the key. See the [implementation and dependency review](https://github.com/kawaiipantsu/nulllobby/blob/main/docs/SIGNING-VERIFICATION.md).
 
+## Published release key
+
+The project owner enabled exchange publication after enrollment. The [public exchange download](https://ca.xxc.dk/api/v1/exchange/keys/7C4F775BBE504B9CC755A1128FB8F0DA9692F8B0/download?format=armor) was checked byte for byte against the committed public-key file.
+
+SHA-256 of the exact armored key file:
+
+```text
+4a5a9e840123dc8d1064b09a9b3da1ec1a7a85563e4bc03ed5f958eae7613a7b
+```
+
+GnuPG lookup identifier (distinct from the SHA-256 pin): `7C4F775BBE504B9CC755A1128FB8F0DA9692F8B0`.
+
+XXC also documents explicit GPG retrieval through its keyserver:
+
+```sh
+gpg --keyserver hkps://ca.xxc.dk --recv-keys 7C4F775BBE504B9CC755A1128FB8F0DA9692F8B0
+```
+
+This imports a public key into your chosen GnuPG keyring; it does not mark its identity as trusted. The SHA-256 pin above applies to the downloaded file, including its armor formatting, rather than to a locally reformatted/re-exported key. Verify that pin through an already trusted channel. Automatic keyserver retrieval remains disabled in the release verifier.
+
 ## Verify downloads
 
 Install `gnupg`. Obtain `packaging/nulllobby-release-key.asc` and its SHA-256 pin from an already trusted checkout or compare the pin through a trusted project channel. Download the release's packages, archives, `SHA256SUMS`, `SHA256SUMS-arti`, both `.asc` signatures and the public key into `dist/` in a checkout matching the artifact version. Then run:
@@ -13,6 +33,8 @@ Install `gnupg`. Obtain `packaging/nulllobby-release-key.asc` and its SHA-256 pi
 ```sh
 make verify-release
 ```
+
+For v0.4.1, the signing tools were added after the original release tag. Use source commit `89e821c1a4547f52b98d588db2d9e43363078c94` (workspace version 0.4.1) or the manual verification method below; the original v0.4.1 tag has no `verify-release` command.
 
 This command is offline and does not read maintainer credentials. It checks the key against the trusted repository pin, verifies both signatures locally, rejects unexpected signing algorithms and checks all four artifact hashes. The verifier uses a separate temporary GnuPG keyring with automatic key retrieval disabled. It rejects invalid, expired, revoked, duplicate and unexpected signatures. Signature hashing is SHA-256; only Ed25519 release signatures are accepted.
 

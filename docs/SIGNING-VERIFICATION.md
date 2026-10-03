@@ -8,6 +8,8 @@ The [XXC developer page](https://ca.xxc.dk/developers) and [OpenAPI specificatio
 
 A fixed enrollment challenge and both original v0.4.1 checksum manifests were signed by the live service and verified locally. The existing release manifests matched the downloaded GitHub assets byte for byte. Signing does not rebuild or modify those binaries. Offline verification also passed with the signing-configuration environment variable pointing to an unavailable path.
 
+The project owner subsequently enabled public-exchange publication. An unauthenticated download from the documented exchange endpoint matched the committed public key byte for byte, including its SHA-256 pin. No local CA token is required to retrieve that public key.
+
 The CA client exists only in Rust `xtask`; it adds no runtime CA request path or shared global identity to the chat application. Its HTTP, JSON, encoding and secret-handling dependencies reuse versions already pinned in the workspace. No new registry package version was selected. Workspace audit/deny checks passed with the existing documented exceptions.
 
 ## GnuPG review
