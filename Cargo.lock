@@ -6633,8 +6633,16 @@ dependencies = [
 name = "xtask"
 version = "0.4.1"
 dependencies = [
+ "base64",
+ "getrandom 0.4.3",
+ "reqwest",
+ "rustls",
+ "secrecy",
+ "serde_json",
  "sha2 0.11.0",
+ "tokio",
  "toml_edit 0.25.15+spec-1.1.0",
+ "zeroize",
 ]
 
 [[package]]

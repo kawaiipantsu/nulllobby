@@ -75,6 +75,16 @@ No chat history, private invites, application keys, fingerprints, trust, DHT rou
 
 Build/release filesystem operations are separate from application runtime. No telemetry, crash uploader, chat database or analytics exists. Embedded Arti retains ordinary guard state and a SQLite directory cache at explicitly configured paths; application/onion secrets never enter that cache.
 
+### Release signing
+
+The optional Rust maintainer tooling uses XXC Trust to sign the public SHA-256 checksum manifests with a dedicated Ed25519 OpenPGP release key. The release private key stays in XXC; XXC administrators and anyone holding a token with signing permission can authorize signatures. The local API token is explicitly persisted in an account-owned private configuration outside the repository, with mode 0600 in a 0700 directory. Neither the token nor this configuration enters the client or Debian packages. The tool does not request private-key exports or install a CA in the system trust store.
+
+HTTPS uses normal certificate verification, a fixed reviewed endpoint, no redirects or environment proxies, deadlines and bounded responses. Public artifact names/hashes, the maintainer connection address and signing times are visible to XXC. Chat, invitations, lobby identities and trust decisions never go to this API. The application has no CA client or background certificate lookup, including in Tor mode.
+
+Signing checks every expected artifact hash and locally verifies the returned Ed25519/SHA-256 signatures using an isolated GnuPG public keyring. Verification disables keyserver retrieval and personal GnuPG configuration. The trust anchor is the reviewed public key pinned by SHA-256. Legacy OpenPGP v4 fingerprints are only GnuPG lookup identifiers; they are not used as NullLobby's SHA-256 lobby fingerprints or as the release trust anchor. A fingerprint or key downloaded alongside an otherwise untrusted release does not independently establish publisher identity. Distribute/compare the SHA-256 key pin through an already trusted channel.
+
+Release signatures authenticate publisher authorization of exact bytes. They do not establish that a binary is safe, audited, reproducible or the newest release. Offline checks cannot discover a newly revoked key without an updated trusted key. Detached checksum/package signatures are not automatically verified by `apt install ./file.deb`; APT repository authentication requires signed repository metadata. See [verification, rotation and compromise handling](docs/wiki/Release-Signing.md). Organization credentials remain a [design proposal](docs/ORGANIZATION-IDENTITY.md), separate from the implemented chat protocol.
+
 Headless bots are authorized recipients. Only explicitly addressed prompts reach the provider, without previous chat or lobby metadata. Cloud APIs need explicit opt-in and are rejected in Tor mode; local models require literal loopback IPs. Redirects and environment proxies are disabled. Providers/local servers may retain prompts under their own policies. HTTP/JSON temporaries and API credentials are not guaranteed fully erased or locked. Model outputs cannot execute commands/tools. See [bot limits](docs/wiki/Bots.md).
 
 ## Implemented protocol properties

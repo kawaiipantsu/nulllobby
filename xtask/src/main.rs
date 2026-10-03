@@ -2,6 +2,8 @@
 //! with structured arguments, never interpolated shell command text.
 #![forbid(unsafe_code)]
 
+mod signing;
+
 use sha2::{Digest, Sha256};
 use std::{
     error::Error,
@@ -39,10 +41,14 @@ fn run() -> Result<()> {
         ["fuzz-smoke"] => fuzz_smoke(),
         ["screenshots"] => screenshots(),
         ["bump", level] => bump(level),
-        ["release"] => release(),
+        ["release" | "release-signed"] => release(true),
+        ["release-unsigned"] => release(false),
+        [action @ ("ca-status" | "ca-enroll" | "sign-release" | "verify-release")] => {
+            signing::run(action)
+        }
         ["announce", tag] => announce(tag),
         _ => {
-            Err("use: cargo xtask build|deb|check|bump major|bump minor|bump patch|release".into())
+            Err("use: cargo xtask build|deb|check|bump major|bump minor|bump patch|release|release-unsigned|ca-status|ca-enroll|sign-release|verify-release".into())
         }
     }
 }
@@ -379,7 +385,7 @@ fn bump_lock(lock: &mut DocumentMut, names: &[String], next: &str) -> Result<()>
     }
     Ok(())
 }
-fn release() -> Result<()> {
+fn release(signed: bool) -> Result<()> {
     if !output("git", &["status", "--porcelain"])?.is_empty() {
         return Err("commit reviewed changes before creating a release".into());
     }
@@ -388,9 +394,15 @@ fn release() -> Result<()> {
     if remote.split_whitespace().next() != Some(commit.as_str()) {
         return Err("release commit must equal published origin/main".into());
     }
+    if signed {
+        signing::preflight()?;
+    }
     check()?;
     deb(false)?;
     deb(true)?;
+    if signed {
+        signing::run("sign-release")?;
+    }
     let version = version()?;
     let tag = format!("v{version}");
     if !output(
@@ -405,27 +417,29 @@ fn release() -> Result<()> {
     let tar = format!("dist/nulllobby_{version}_{TARGET}.tar.gz");
     let arti_deb = format!("dist/nulllobby-arti-experimental_{version}_amd64.deb");
     let arti_tar = format!("dist/nulllobby-arti-experimental_{version}_{TARGET}.tar.gz");
-    command(
-        "gh",
-        &[
-            "release",
-            "create",
-            &tag,
-            &deb,
-            &tar,
-            "dist/SHA256SUMS",
-            &arti_deb,
-            &arti_tar,
-            "dist/SHA256SUMS-arti",
-            "--draft",
-            "--target",
-            &commit,
-            "--title",
-            &format!("NullLobby {version} — Linux preview"),
-            "--notes-file",
-            "docs/RELEASE-NOTES.md",
-        ],
-    )?;
+    let title = format!("NullLobby {version} — Linux preview");
+    let mut arguments = vec![
+        "release",
+        "create",
+        &tag,
+        &deb,
+        &tar,
+        "dist/SHA256SUMS",
+        &arti_deb,
+        &arti_tar,
+        "dist/SHA256SUMS-arti",
+        "--draft",
+        "--target",
+        &commit,
+        "--title",
+        &title,
+        "--notes-file",
+        "docs/RELEASE-NOTES.md",
+    ];
+    if signed {
+        arguments.extend(signing::RELEASE_ASSETS);
+    }
+    command("gh", &arguments)?;
     println!(
         "Draft created. Publish after review; the release workflow will post a Discussion notification."
     );

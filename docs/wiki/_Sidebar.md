@@ -13,5 +13,7 @@
 - [Roadmap](Roadmap)
 - [Arti review](Arti-Review)
 - [Releases](Releases)
+- [Release signing](Release-Signing)
+- [Organization identity proposal](https://github.com/kawaiipantsu/nulllobby/blob/main/docs/ORGANIZATION-IDENTITY.md)
 - [Security model](https://github.com/kawaiipantsu/nulllobby/blob/main/SECURITY.md)
 - [Community discussions](https://github.com/kawaiipantsu/nulllobby/discussions)

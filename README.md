@@ -131,7 +131,7 @@ make deb
 make deb-arti          # separate experimental embedded-Tor package
 make bump-patch        # also bump-minor / bump-major
 # Review, commit and push the version change:
-make release           # validates and creates a draft GitHub release
+make release-signed    # validates, signs with XXC, creates a draft GitHub release
 ```
 
 Exact build and test commands:
@@ -142,6 +142,10 @@ cargo test --locked --workspace
 ```
 
 `make build` additionally removes local source/cache paths from compiled artifacts. Debian packages include the binary, security documentation and dependency license notices. They install no service, state directory, Tor configuration or secrets. The glibc requirement comes from the actual binary; build on the oldest distribution you intend to support. Publishing a reviewed draft triggers an Announcements Discussion.
+
+Release signing uses a dedicated Ed25519 OpenPGP key in [XXC Trust](https://ca.xxc.dk/developers). It signs both SHA-256 checksum manifests; GnuPG verifies every returned signature against the pinned public key before upload. Maintainer credentials stay outside the repository and packages. Install `gnupg` for verification and signing tests. `make verify-release` checks downloaded artifacts offline. See [release signing and trust setup](docs/wiki/Release-Signing.md). `make release` also requires signing; `make release-unsigned` is the explicit unsigned draft workflow.
+
+OpenPGP release signatures are separate from lobby identities. Chat continues to use Noise and ephemeral per-lobby Ed25519 keys. An [opt-in organization identity design](docs/ORGANIZATION-IDENTITY.md) is documented for review; it is not implemented in the application.
 
 ## Documentation and contribution
 

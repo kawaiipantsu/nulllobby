@@ -22,7 +22,7 @@ jobs:
           toolchain: '1.94.1'
           components: rustfmt, clippy
       - name: Install native build dependencies
-        run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev pkg-config
+        run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev pkg-config gnupg
       - name: Install Rust security tools
         run: |
           cargo install cargo-audit --version 0.22.2 --locked --no-default-features

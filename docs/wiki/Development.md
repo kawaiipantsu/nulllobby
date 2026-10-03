@@ -2,6 +2,8 @@
 
 All application/helper/test/fuzz code is Rust. No Python is used. Required stable toolchain: Rust 1.94 or later. `Cargo.lock` pins the application graph; `fuzz/Cargo.lock` pins the separate fuzz graph.
 
+Install `gnupg` and standard GNU coreutils for release verification and signing tests. Tests generate synthetic Ed25519 signing keys in private temporary directories, stop their temporary GnuPG agents and remove their files. They make no XXC API calls and require no maintainer credentials. CI installs GnuPG explicitly.
+
 ## Gates
 
 ```sh

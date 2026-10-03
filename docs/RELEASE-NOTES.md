@@ -33,3 +33,9 @@ Embedded Arti remains experimental, including the local patch that keeps onion s
 Delivery acknowledgements, durable offline delivery, automatic NAT traversal, private capability revocation and Windows/macOS desktop clients remain deferred. Live paid-provider bot calls require operator credentials and were not exercised during development checks.
 
 See the [Terminal guide](https://github.com/kawaiipantsu/nulllobby/wiki/Terminal), [Bot guide](https://github.com/kawaiipantsu/nulllobby/wiki/Bots), [Screenshots](https://github.com/kawaiipantsu/nulllobby/wiki/Screenshots) and [security model](https://github.com/kawaiipantsu/nulllobby/blob/main/SECURITY.md).
+
+### Release signatures added after publication
+
+On 2026-10-03 UTC, detached Ed25519/SHA-256 OpenPGP signatures were added for both checksum manifests using a dedicated release key in XXC Trust. The original v0.4.1 binaries, archives and checksum manifests are unchanged. The signing tooling and public-key pin were added in a later source commit; the v0.4.1 tag is unchanged.
+
+Download `SHA256SUMS.asc`, `SHA256SUMS-arti.asc`, `nulllobby-release-key.asc` and `nulllobby-release-key.sha256` alongside the original assets. Follow the [release verification guide](https://github.com/kawaiipantsu/nulllobby/wiki/Release-Signing), including establishing the public-key pin through a trusted channel. `apt install ./file.deb` does not automatically verify these detached signatures. This does not change lobby identity, encryption or privacy behavior.

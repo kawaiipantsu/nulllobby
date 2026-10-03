@@ -48,10 +48,12 @@ Review the diff, update `docs/RELEASE-NOTES.md`, run checks, commit using your c
 Prerequisites: authenticated `gh` with repository release permission, a clean tree, all required security tools, and local HEAD equal to published `origin/main`.
 
 ```sh
-make release
+make release-signed
 ```
 
-This reruns all checks, builds packages and creates a **draft** `v<version>` release targeted at the exact published commit. It attaches standard and separately named experimental-Arti `.deb`/`.tar.gz` artifacts with separate checksum files, using `docs/RELEASE-NOTES.md` without shell interpolation. A duplicate tag/release fails through GitHub instead of overwriting it.
+This reruns all checks, builds packages, signs the checksum manifests through XXC Trust and creates a **draft** `v<version>` release targeted at the exact published commit. It attaches standard and separately named experimental-Arti `.deb`/`.tar.gz` artifacts, separate checksum files, detached signatures and the public verification key. See [Release signing](Release-Signing) for the one-time maintainer setup and offline verification. Signing failure stops the release; there is no unsigned fallback. `make release` also requires signing. `make release-unsigned` is the separate, explicitly unsigned draft workflow.
+
+Both workflows use `docs/RELEASE-NOTES.md` without shell interpolation. A duplicate tag/release fails through GitHub instead of overwriting it. Signing runs only in maintainer tooling; running chat never contacts the CA.
 
 Review the draft's scope and artifacts in GitHub, then publish it. This is an explicit maintainer action; building or bumping never publishes automatically.
 

@@ -1,7 +1,7 @@
-.PHONY: help build build-arti test check deb deb-arti screenshots bump-major bump-minor bump-patch release clean
+.PHONY: help build build-arti test check deb deb-arti screenshots bump-major bump-minor bump-patch release release-signed release-unsigned sign-release verify-release ca-status ca-enroll clean
 
 help:
-	@echo 'build | build-arti | test | check | deb | deb-arti | screenshots | bump-major | bump-minor | bump-patch | release | fuzz-smoke | clean'
+	@echo 'build | build-arti | test | check | deb | deb-arti | screenshots | bump-major | bump-minor | bump-patch | release | release-signed | release-unsigned | sign-release | verify-release | ca-status | ca-enroll | fuzz-smoke | clean'
 
 build:
 	cargo xtask build
@@ -32,6 +32,24 @@ bump-patch:
 
 release:
 	cargo xtask release
+
+release-signed:
+	cargo xtask release-signed
+
+release-unsigned:
+	cargo xtask release-unsigned
+
+sign-release:
+	cargo xtask sign-release
+
+verify-release:
+	cargo xtask verify-release
+
+ca-status:
+	cargo xtask ca-status
+
+ca-enroll:
+	cargo xtask ca-enroll
 
 clean:
 	cargo clean
