@@ -1,0 +1,16 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: NullLobby
+Source: https://github.com/kawaiipantsu/nulllobby
+
+Files: *
+Copyright: 2026 Kawaiipantsu, THUGS(red)
+License: AGPL-3.0-or-later
+ This program is free software: you can redistribute it and/or modify
+ it under the terms of the GNU Affero General Public License as published
+ by the Free Software Foundation, either version 3 of the License, or
+ (at your option) any later version.
+ .
+ The full license is installed alongside this file as LICENSE.
+ .
+ Third-party Rust dependencies retain their original licenses. See
+ THIRD-PARTY-NOTICES.txt in this directory and Cargo.lock in the source.

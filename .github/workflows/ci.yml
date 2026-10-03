@@ -1,0 +1,36 @@
+name: Rust checks and Debian package
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  phase-one:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable snapshot
+        with:
+          toolchain: '1.94.1'
+          components: rustfmt, clippy
+      - name: Install Rust security tools
+        run: |
+          cargo install cargo-audit --version 0.22.2 --locked --no-default-features
+          cargo install cargo-deny --version 0.20.2 --locked
+      - run: cargo fmt --check
+      - run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
+      - run: cargo test --locked --workspace
+      - run: cargo audit
+      - run: cargo deny check
+      - run: make deb
+      - name: Offline CLI with unwritable HOME
+        run: env HOME=/proc target/x86_64-unknown-linux-gnu/release/nulllobby --self-check
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: nulllobby-linux-phase-one
+          path: dist/*
+          if-no-files-found: error

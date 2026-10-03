@@ -1,0 +1,23 @@
+name: Release Discussion
+on:
+  release:
+    types: [published]
+permissions:
+  contents: read
+  discussions: write
+jobs:
+  announce:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.release.tag_name }}
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d
+        with:
+          toolchain: '1.94.1'
+      - name: Announce published release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: cargo xtask announce "$RELEASE_TAG"
