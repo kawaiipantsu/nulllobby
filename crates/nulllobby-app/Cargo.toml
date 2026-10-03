@@ -1,0 +1,28 @@
+[package]
+name = "nulllobby-app"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+tor-arti-experimental = ["nulllobby-tor/tor-arti-experimental"]
+
+[dependencies]
+nulllobby-core.workspace = true
+nulllobby-direct.workspace = true
+nulllobby-transport.workspace = true
+nulllobby-platform.workspace = true
+nulllobby-tor.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time", "net", "signal"] }
+secrecy.workspace = true
+zeroize.workspace = true
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+hmac.workspace = true
+sha2.workspace = true
+getrandom.workspace = true

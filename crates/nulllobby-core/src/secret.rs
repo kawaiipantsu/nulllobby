@@ -93,8 +93,7 @@ secret_type!(DiscoveryMaterial);
 secret_type!(NoisePsk);
 
 secret_type!(
-    /// Placeholder material only: Phase 2 will compute X25519 and bind it to Ed25519.
-    /// No public key derivation, Noise handshake, session or cipher exists yet.
+    /// Independently generated X25519 static material, bound to Ed25519 inside Noise.
     NoiseStaticSecret
 );
 impl NoiseStaticSecret {

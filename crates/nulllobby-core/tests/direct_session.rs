@@ -3,7 +3,10 @@ use nulllobby_core::{
     EphemeralIdentity, LobbyId, PrivateLobbySecret, domain::PaddingPolicy, session::SecureSession,
 };
 use nulllobby_direct::{DirectConfig, DirectTransport};
-use nulllobby_transport::{Endpoint, ModePolicy, Transport, TransportKind};
+use nulllobby_transport::{
+    ConnectionState, Endpoint, ModePolicy, NetworkAction, NetworkObserver, Transport,
+    TransportError, TransportKind,
+};
 use std::{
     net::SocketAddr,
     num::NonZeroU16,
@@ -15,16 +18,26 @@ use tokio::{
     net::{TcpListener, TcpStream},
     sync::Semaphore,
 };
+#[derive(Default)]
+struct States(Mutex<Vec<ConnectionState>>);
+impl NetworkObserver for States {
+    fn before_network_action(&self, action: NetworkAction) -> Result<(), TransportError> {
+        ModePolicy(TransportKind::Direct).before_network_action(action)
+    }
+    fn connection_state(&self, state: ConnectionState) {
+        self.0.lock().unwrap().push(state);
+    }
+}
 
 #[tokio::test]
 async fn real_tcp_uses_bt_extension_noise_proof_and_hides_plaintext() {
     let config = DirectConfig {
         listen: "127.0.0.1:0".parse().unwrap(),
     };
-    let observer = Arc::new(ModePolicy(TransportKind::Direct));
+    let observer = Arc::new(States::default());
     let global = Arc::new(Semaphore::new(128));
     let mut a = DirectTransport::new(config.clone(), observer.clone(), global.clone());
-    let mut b = DirectTransport::new(config, observer, global);
+    let mut b = DirectTransport::new(config, Arc::new(ModePolicy(TransportKind::Direct)), global);
     a.start().await.unwrap();
     b.start().await.unwrap();
     let ha = a.create_endpoint([7; 32]).await.unwrap();
@@ -77,6 +90,17 @@ async fn real_tcp_uses_bt_extension_noise_proof_and_hides_plaintext() {
     );
     let (_, mut sender) = sa.unwrap().split();
     let (mut receiver, _) = sb.unwrap().split();
+    assert_eq!(
+        *observer.0.lock().unwrap(),
+        vec![
+            ConnectionState::Connecting,
+            ConnectionState::BtHandshaking,
+            ConnectionState::ExtensionNegotiating,
+            ConnectionState::NoiseHandshaking,
+            ConnectionState::AuthenticatingIdentity,
+            ConnectionState::Secure
+        ]
+    );
     let plaintext = b"synthetic chat canary never visible on the network";
     sender
         .send(plaintext, PaddingPolicy::Bucketed)

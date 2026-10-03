@@ -1,19 +1,17 @@
 # Architecture
 
-## Implemented workspace
+## Crate boundaries
 
-| Crate | Owns | Does not own |
-|---|---|---|
-| `nulllobby-core` | Lobby IDs/types, private KDF, cards, identities, fingerprints, trust and safe text | Socket handles, files, UI rendering or network implementation |
-| `nulllobby-transport` | Async byte-stream trait, endpoint/address types, network policy, bounded channels | Cryptography, DHT, TCP or Tor backend |
-| `nulllobby-direct` | Exact standard BitTorrent handshake codec and ephemeral peer ID | TCP connections, BEP 10 parser/negotiation, DHT |
-| `nulllobby-platform` | Owned zeroizing secret memory and Linux core-dump prevention | Lobby protocol or display logic |
-| `nulllobby-cli` | Offline diagnostics and about/help text | Chat, terminal UI or connectivity |
-| `xtask` | Developer build/package/version/release tasks | Application runtime state |
-
-Core depends on transport and platform. Direct currently stands alone as a codec. Network implementations will implement the transport trait without forcing core to import their socket types. Every crate forbids unsafe code except the platform crate, where the Linux module contains documented FFI.
-
-## Future connection path
+| Crate | Owns |
+|---|---|
+| `nulllobby-core` | Lobby IDs/cards, per-lobby identities, Noise sessions, canonical signed messages, replay, endpoint books, fingerprints and trust |
+| `nulllobby-transport` | Async byte streams, framing, endpoint types, mode policy, bounded channels and resource permits |
+| `nulllobby-direct` | Standard BitTorrent handshake, BEP 10 adapter and bounded BEP 5 discovery |
+| `nulllobby-tor` | SAFECOOKIE control, local SOCKS, v3 onion validation, ephemeral service lifecycle |
+| `nulllobby-platform` | Secret memory mappings, zeroization, Linux core-dump controls and isolated FFI |
+| `nulllobby-app` | Command/event orchestration, lobby workers, authenticated gossip, peer lifecycle |
+| `nulllobby-tui` | Ratatui/Crossterm rendering, keyboard input and explicit invite display |
+| `xtask` | Developer build/package/version/fuzz/release helpers |
 
 ```text
 Linux TUI / future Iced desktop
@@ -28,39 +26,39 @@ Linux TUI / future Iced desktop
           /                 \
  Direct adapter             Tor adapter
  BEP 10 + BitTorrent        onion service stream
- TCP + Mainline DHT         external Tor first
+ TCP + Mainline DHT         external Tor daemon
 ```
 
-Direct will need a stream adapter that preserves BEP 10 framing and handshake/ciphertext outer tags. Tor will supply a framed onion stream. Application messages become legal only after the same Noise and identity authentication process for either mode. `Transport::start` does not imply cryptographic authentication.
+Core never imports socket types. The object-safe async `Transport` trait covers start/stop, create/destroy endpoint, connect/accept, local identity and network status. A returned transport stream is untrusted: only a successfully constructed `SecureSession` can carry application packets. The session constructor performs Noise and verifies the encrypted identity proof before exposing read/write halves.
 
-The trait is object-safe and returns boxed `Send` futures. It covers start/stop, per-lobby endpoint creation/destruction, connect/accept, local transport identity and status. Endpoint handles are opaque process-local identifiers; backend implementations must check their ownership and lobby scope. Stop/destroy must terminate owned peer streams as well as listening endpoints.
+Direct progresses through TCP connection, BitTorrent handshake, extension negotiation, Noise, identity authentication and established application records. Tor progresses through daemon bootstrap, service creation, onion connection, Noise and identity authentication. Errors close the stream; there is no alternate cipher or transport path. `Transport::start` means network readiness, not authenticated peer identity.
 
-## Ownership and state
+## Ownership
 
-`EphemeralIdentity` owns independently generated Ed25519 seed and future Noise static material. No identity object is clonable or serializable. Public keys are computed with Dalek; the retained seed uses a dedicated Linux mapping. Fingerprints and trust are public identity metadata, but still are not persisted by the application.
+Each lobby worker owns its card, independent identity, trust list, replay state, member cache and endpoint book. Identities and private cards are non-cloneable secret wrappers; async tasks share ownership through `Arc`. UI events carry display metadata and, only after `/invite`, a redacted card wrapper. They never carry identity private keys or Noise key material.
 
-`LobbyCard` owns an optional capability and a bounded seed list. Public cards contain no authentication secret. Private cards carry the capability needed to derive the future PSK. Export returns a redacted `SecretString`, requiring an explicit caller decision to expose it. There is no UI export/clipboard path yet.
+One process-wide semaphore caps live peers at 128 and another caps pending handshakes at 32. A stream retains its handshake permit through BitTorrent/SOCKS, Noise and proof validation. Only the core's authenticated transition releases it. Listener/stream ownership closes connections on leave; dropping task sets aborts their work. Per-peer outgoing queues are bounded; slow peers disconnect instead of consuming unbounded RAM.
 
-`LobbyTrust` is bound to a lobby ID, caps entries at 64 and defaults to unverified. Commands carry validated input; existing events contain no private keys. Full chat/presence events will be added alongside their verified payload types in Phase 3.
+`AppCommand` handles typed user intent. `AppEvent` reports bounded view snapshots, verified messages, notices and lifecycle changes. The TUI imports no socket or cipher implementation. Future desktop clients can reuse the same boundary.
 
-Transport-specific connection states are declared for later state machines. Phase 1 does not implement their transitions or accept any application messages. No enum declaration is treated as a completed security control.
+All normal application state lives in memory. Secret seeds, capabilities and static Noise keys use dedicated locked mappings when permitted. Noise library internals and terminal buffers are not all locked or guaranteed to zeroize; see the security model. Build/release files and test fixtures are developer operations, separate from runtime persistence.
 
-## Transport choice
+## Transport selection
 
-The future application owns one explicit transport choice. It must require leaving/rejoining to change mode inside a lobby. Tor mode has no Direct fallback. `NetworkObserver` is the injection seam for future tests; the mode policy rejects nonlocal-Tor actions when Tor is selected. Backends must make it impossible to bypass this seam in application-controlled networking.
+The application selects exactly one network mode and requires leaving all lobbies before changing it. Backends use an injectable `NetworkObserver`. Tor rejects every Direct/DHT/UDP/peer-DNS/tracker action. It only contacts explicitly configured numeric loopback SOCKS/Control endpoints and exposes loopback service listeners. Onion endpoints are fixed public service keys and ports, never arbitrary hostnames or exit destinations.
 
-Onion endpoints are modeled as a 32-byte v3 service public key and a nonzero virtual port. No DNS hostname or clearnet address is accepted in a Tor card. Address construction/checksum validation against the Tor v3 format belongs to the future Tor backend. No onion keypair or service is created in Phase 1.
+A separate external-Tor control connection owns each lobby worker's services. No service is detached. Local ControlPort loss closes peer streams, reports unavailability, and removes services when Tor observes the closed controller. Explicit shutdown attempts `DEL_ONION` before dropping control ownership.
 
-## Platform roadmap
+## Deferred platforms
 
-Linux first. Later Windows `x86_64-pc-windows-msvc`, then optional ARM64; macOS ARM64, then optional x86_64. Both desktops should share Iced code over the existing core. No Electron. Add VirtualLock and suitable dump controls for Windows; appropriate memory locking, signing and notarization for macOS. Signing credentials stay outside the repository.
+Windows and macOS desktop implementations remain future work. Use Iced and the shared Rust core, with no Electron. Windows starts with `x86_64-pc-windows-msvc`, then optional ARM64; macOS starts with ARM64, then optional x86-64. Add VirtualLock/dump controls and native signing/packaging on Windows, appropriate memory locking and signing/notarization on macOS. Credentials stay outside the repository.
+
+The Arti feature is a reviewed unavailable extension point; see [Arti review](Arti-Review.md). It cannot substitute Direct.
 
 ## Renaming
 
-1. Change presentation constants in `crates/nulllobby-core/src/branding.rs`.
-2. Update package/binary names, the workspace path dependencies, Debian metadata, Make/release artifact names and repository URLs.
-3. Update README/banner/about text and wiki navigation.
-4. Keep existing protocol domains, card prefix and versioned wire identifiers stable for compatibility. A display-name change does not justify changing security domains.
-5. If a wire rename is required, design an explicit version migration and tests; do not silently reinterpret existing invitations.
-
-There is no hidden executable name in cryptographic key derivation: the labels are explicit versioned protocol constants documented in the protocol guide.
+1. Replace `branding.rs` presentation constants.
+2. Update Cargo package/binary/path names, Debian metadata, release filenames and repository URLs.
+3. Replace README/banner/about text and wiki navigation.
+4. Preserve versioned protocol domains and card prefixes for compatibility. A product rename does not require new cryptographic domains.
+5. If wire identifiers must change, design an explicit version migration and interoperability tests.

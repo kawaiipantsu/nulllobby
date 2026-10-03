@@ -1,0 +1,70 @@
+[package]
+name = "nulllobby-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+license = "AGPL-3.0-or-later"
+[package.metadata]
+cargo-fuzz = true
+[dependencies]
+libfuzzer-sys = "0.4.13"
+nulllobby-core = { path = "../crates/nulllobby-core" }
+nulllobby-direct = { path = "../crates/nulllobby-direct" }
+nulllobby-transport = { path = "../crates/nulllobby-transport" }
+nulllobby-tor = { path = "../crates/nulllobby-tor" }
+tokio = { version = "1.53.2", features = ["rt"] }
+
+[[bin]]
+name = "bt_handshake"
+path = "fuzz_targets/bt_handshake.rs"
+test = false
+doc = false
+bench = false
+[[bin]]
+name = "bep10"
+path = "fuzz_targets/bep10.rs"
+test = false
+doc = false
+bench = false
+[[bin]]
+name = "bencode"
+path = "fuzz_targets/bencode.rs"
+test = false
+doc = false
+bench = false
+[[bin]]
+name = "lobby_card"
+path = "fuzz_targets/lobby_card.rs"
+test = false
+doc = false
+bench = false
+[[bin]]
+name = "invite"
+path = "fuzz_targets/invite.rs"
+test = false
+doc = false
+bench = false
+[[bin]]
+name = "noise_outer"
+path = "fuzz_targets/noise_outer.rs"
+test = false
+doc = false
+bench = false
+[[bin]]
+name = "application"
+path = "fuzz_targets/application.rs"
+test = false
+doc = false
+bench = false
+[[bin]]
+name = "endpoint"
+path = "fuzz_targets/endpoint.rs"
+test = false
+doc = false
+bench = false
+[[bin]]
+name = "terminal"
+path = "fuzz_targets/terminal.rs"
+test = false
+doc = false
+bench = false

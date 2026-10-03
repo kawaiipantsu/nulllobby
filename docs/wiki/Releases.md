@@ -1,6 +1,6 @@
 # Building and publishing releases
 
-All project helper logic is Rust in `xtask`. Make is a command shortcut. Phase 1 packages are offline diagnostics; release titles/notes must keep that limitation visible.
+All project helper logic is Rust in `xtask`. Make is a command shortcut. The Linux preview packages the terminal client and external Tor support. Release notes must retain the unaudited status and deferred Arti/desktop scope.
 
 ## Local build and packages
 
@@ -9,11 +9,11 @@ make check
 make deb
 ```
 
-Outputs for version 0.1.0:
+Outputs for version 0.2.0:
 
 ```text
-dist/nulllobby_0.1.0_amd64.deb
-dist/nulllobby_0.1.0_x86_64-unknown-linux-gnu.tar.gz
+dist/nulllobby_0.2.0_amd64.deb
+dist/nulllobby_0.2.0_x86_64-unknown-linux-gnu.tar.gz
 dist/SHA256SUMS
 ```
 
@@ -24,9 +24,9 @@ The package stage lives under `target/debian-stage`. No package is installed aut
 ## Version bumps
 
 ```sh
-make bump-patch  # 0.1.0 -> 0.1.1
-make bump-minor  # 0.1.0 -> 0.2.0
-make bump-major  # 0.1.0 -> 1.0.0
+make bump-patch  # 0.2.0 -> 0.2.1
+make bump-minor  # 0.2.0 -> 0.3.0
+make bump-major  # 0.2.0 -> 1.0.0
 ```
 
 Choose **one** command per intended bump. It updates `[workspace.package].version`, exact internal workspace dependency versions and every workspace package version in Cargo.lock. It does not change registry dependency versions, commit, tag or publish. Lower version components reset for major/minor; invalid levels/overflow fail.
@@ -52,7 +52,7 @@ The `release-notification.yml` workflow runs on a published release, with `discu
 Manual recovery after an unsuccessful workflow:
 
 ```sh
-cargo xtask announce v0.1.0
+cargo xtask announce v0.2.0
 ```
 
 Run from the checked-out release commit with authenticated `gh`. Release-body data is passed as structured command arguments, not shell code. Do not put secrets into release notes, source fixtures or package metadata. Changing feature maturity requires updating the notes before the release.

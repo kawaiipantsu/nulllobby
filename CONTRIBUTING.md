@@ -1,6 +1,6 @@
 # Contributing
 
-Implement one roadmap phase at a time. Phase 1 has no network backend or UI. Preserve the separation between core, transport, platform and presentation.
+Implement one roadmap phase at a time. Linux preview has no network backend or UI. Preserve the separation between core, transport, platform and presentation.
 
 Run `make check` and `make deb`. Use Rust for application code, helper tools, tests and generators. No Python. Keep Cargo.lock committed, inspect new dependency releases/upstream maintenance/RustSec status, and enable only required features.
 

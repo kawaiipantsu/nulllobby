@@ -1,29 +1,45 @@
-# Phase 1 dependency review
+# Dependency review
 
-Reviewed on 2026-10-03 using current `cargo search`/`cargo info`, downloaded source APIs and the RustSec advisory database. `Cargo.lock` is the exact resolved graph. Direct crates are selected from maintained upstream projects; absence of a known advisory does not prove correctness. No dependency is accepted merely because its API name is familiar.
+Reviewed on 2026-10-03 using current Cargo registry releases, downloaded source APIs, upstream protocol documentation and RustSec. The lockfiles specify exact graphs. A clean advisory scan is not proof of correctness or an independent application audit.
 
-| Direct dependency | Selected | Reason and upstream |
+| Dependency | Selected | Review |
 |---|---|---|
-| ed25519-dalek | 3.0.0 | [Dalek](https://github.com/dalek-cryptography/curve25519-dalek); current stable API, zeroization, no hazmat/legacy compatibility |
-| sha2 | 0.11.0 | [RustCrypto hashes](https://github.com/RustCrypto/hashes); SHA-256 fingerprints/checksums, zeroize enabled |
-| hkdf / hmac | 0.13.0 / 0.13.0 | [RustCrypto KDFs](https://github.com/RustCrypto/KDFs), [MACs](https://github.com/RustCrypto/MACs); RFC 5869, HMAC zeroize feature explicitly unified |
-| getrandom | 0.4.3 | [rust-random](https://github.com/rust-random/getrandom); fallible OS entropy, no deterministic seed fallback |
-| secrecy | 0.10.3 | [iqlusion](https://github.com/iqlusioninc/crates/tree/main/secrecy); explicit exposure and redacted SecretBox/SecretString |
-| zeroize | 1.9.0 | [RustCrypto utils](https://github.com/RustCrypto/utils); secret-buffer clearing |
-| tokio | 1.53.2 | [Tokio](https://github.com/tokio-rs/tokio); only `io-util` and `sync`, no runtime network/filesystem features |
-| base64 | 0.23.1 | [rust-base64](https://github.com/marshallpierce/rust-base64); strict URL-safe no-padding engine; optional unsafe SIMD disabled |
-| thiserror | 2.0.21 | [thiserror](https://github.com/dtolnay/thiserror); fixed error categories with no payload reflection |
-| libc | 0.2.190 | [rust-lang/libc](https://github.com/rust-lang/libc); stable series selected instead of 1.0 alpha, Linux FFI only |
-| toml_edit | 0.25.15 | [toml-rs](https://github.com/toml-rs/toml); developer tooling only, manifest/lockfile edits |
+| tokio | 1.53.2 | Bounded channels, runtime, TCP/UDP, deadlines and local cookie-file read. No unbounded Tokio channels |
+| snow | 0.10.0 | Exact XX and XXpsk3/25519/ChaChaPoly/BLAKE2s patterns verified against parser/build APIs and upstream vectors; both exercised by tests. Only required algorithms enabled |
+| ed25519-dalek | 3.0.0 | Independent signing seeds, strict verification, weak-key rejection; zeroize enabled |
+| x25519-dalek | 3.0.0 | Static public-key derivation and zeroizing secret type; actual key checked against Noise |
+| sha2 / hkdf / hmac | 0.11.0 / 0.13.0 / 0.13.0 | SHA-256 fingerprints/checksums, RFC 5869 domain separation and Tor SAFECOOKIE HMAC; available zeroize features enabled |
+| getrandom | 0.4.3 | Fallible OS randomness, no deterministic or time-based fallback |
+| secrecy / zeroize | 0.10.3 / 1.9.0 | Explicit exposure, redacted secret wrappers and owned-buffer wiping |
+| mainline | 8.0.1 | Default/actor features disabled. Only maintained BEP 42 IPv4 ID helper used; actor request/response queues use unbounded flume channels and were not accepted as the app discovery path |
+| bendy | 0.6.1 | Canonical bencode decoder with explicit depth/input/collection limits; used by the bounded BEP 5 and BEP 10 implementations |
+| minicbor | 2.3.0 | Manual definite-length canonical CBOR, fixed arrays and bounds; no hostile serde deserialization |
+| base64 | 0.23.1 | Strict URL-safe, no-padding card codec; optional unsafe SIMD disabled |
+| data-encoding / sha3 | 2.11.1 / 0.12.0 | Tor's specified v3 Base32 and SHA3 address checksum only |
+| ratatui / crossterm | 0.30.2 / 0.29.0 | Linux TUI. Ratatui defaults reduced to Crossterm and rendered-line-count support for scrolling; no OSC52 clipboard feature |
+| libc | 0.2.190 | Isolated Linux FFI for private mappings, mlock and core-dump controls |
+| thiserror | 2.0.21 | Fixed public error categories, no payload reflection |
+| toml_edit | 0.25.15 | Developer tooling only; consistent workspace/lockfile version bumps |
+| cargo-fuzz / libfuzzer-sys | 0.13.2 / 0.4.13 | Separate developer fuzz graph; Rust wrappers, standard libFuzzer engine |
 
-The graph has 48 registry packages (including optional/platform/build packages) and 6 local workspace packages. Runtime dependencies are smaller than the full workspace graph. `syn` 2 and 3 are both required by upstream proc macros; cargo-deny reports this as a duplication warning, not an advisory exception. No RustSec advisory ignores are configured.
+## Crypto review
 
-Relevant historical advisories checked: [Dalek RUSTSEC-2022-0093](https://rustsec.org/advisories/RUSTSEC-2022-0093.html), [curve25519-dalek RUSTSEC-2024-0344](https://rustsec.org/advisories/RUSTSEC-2024-0344.html), [Tokio RUSTSEC-2025-0023](https://rustsec.org/advisories/RUSTSEC-2025-0023.html), [SHA-2 RUSTSEC-2021-0100](https://rustsec.org/advisories/RUSTSEC-2021-0100.html), older Tokio/base64/zeroize-derive entries. Selected versions are outside their affected ranges. `cargo audit` checks the entire current lockfile, including transitive dependencies. Do not treat this static document as a substitute for rerunning it.
+The exact private snow pattern appears in upstream Cacophony vectors. Tests cover both suites, wrong PSK, wrong lobby, every identity-proof byte mutation, actual remote static-key mismatch, transcript mismatch, signed-message mutation and captured-wire confidentiality. The historical [snow authentication advisory](https://rustsec.org/advisories/RUSTSEC-2024-0011.html) is fixed in selected 0.10.0. Dalek, Tokio and RustCrypto historical advisories were checked through the current full graph scan; no advisory ignore is configured.
 
-The preliminary RustSec source snapshot was `ef6173cbc5c50ec8166f9a5b28f07834144373ee`. Final audit/deny runs fetch the current database. Tool versions used: cargo-audit 0.22.2, cargo-deny 0.20.2. Registry API HTTP access was unavailable in the build environment; Cargo registry lookup and package downloads succeeded.
+Dalek enables zeroization. Stored identity seeds, capabilities, static keys and derived PSKs use dedicated platform mappings. **Snow does not expose complete wiping/locking of its internal handshake/cipher state.** The memory-lock status applies to our retained secret wrappers, not every library allocation or temporary. No claim of complete secret erasure is made.
 
-Source review confirmed Dalek `SigningKey::from_bytes`/`verifying_key` and zeroize-on-drop, `getrandom::fill`, secrecy's allocation/exposure behavior and HKDF extraction/expansion. HMAC/SHA zeroization does not guarantee clearing all upstream intermediate stack values. No blanket guarantee of secret erasure is made.
+## Direct discovery decision
 
-Not selected yet: `snow`, `mainline`, bencode/CBOR application codecs, Ratatui/Crossterm, Tor control/SOCKS crates, Arti and Iced. Inspect current APIs, release security status and dependency costs in the phase that actually introduces them. In particular, verify the exact XXpsk3 suite before Phase 2 and Arti onion hosting maturity before an experimental backend.
+Mainline's current high-level API was inspected rather than guessed. Its actor uses unbounded response/request channels. NullLobby therefore implements a small bounded read-only BEP 5 client with bendy and Tokio, retaining mainline's BEP 42 ID implementation. It does not use the crate's unbounded actor, recursive serde network decoder or persistence. The transitive SHA-1 helper belongs to the BitTorrent crate; NullLobby uses SHA-256/HKDF for application security and does not call that SHA-1 helper.
 
-`cargo deny check` enforces known advisories, reviewed licenses, registry/git sources and version policies. Dependency license texts are bundled by the Rust packaging tool. The project license is AGPL-3.0-or-later; dependencies retain their original licenses.
+## Tor decision
+
+External Tor integration follows the [ControlPort](https://spec.torproject.org/control-spec/commands.html), [SOCKS](https://spec.torproject.org/socks-extensions.html) and [v3 address](https://spec.torproject.org/rend-spec/encoding-onion-addresses.html) specifications. A narrow local protocol implementation avoids an unnecessary control library dependency graph. Authentication is SAFECOOKIE only; requests/replies and SOCKS addresses have fixed limits. Local protocol fixtures and a real Tor 0.4.9.12 smoke test passed.
+
+Arti 0.47.0 has working onion hosting and an optional ephemeral keystore, but its high-level hosting path retains per-service persistent state. Integration is explicitly unavailable pending storage separation review; see [Arti review](wiki/Arti-Review.md). No Arti or desktop dependency tree is introduced merely by enabling the placeholder feature.
+
+## License and advisory gates
+
+`cargo audit` and `cargo deny check` scan the locked application graph. Duplicate versions arise from upstream crypto/proc-macro/TUI constraints and are warnings, not suppressed advisories. Reviewed license allowlist: AGPL-3.0-or-later, MIT, Apache-2.0, BSD-3-Clause, Unicode-3.0, BlueOak-1.0.0 and Zlib. Fuzz-only libFuzzer additionally uses NCSA; it is outside shipped binaries. Rust packaging bundles the actual target's dependency license texts.
+
+Primary upstreams: [Snow](https://github.com/mcginty/snow), [Dalek](https://github.com/dalek-cryptography/curve25519-dalek), [RustCrypto](https://github.com/RustCrypto), [Tokio](https://github.com/tokio-rs/tokio), [mainline](https://github.com/pubky/mainline), [minicbor](https://github.com/twittner/minicbor), [bendy](https://github.com/P3KI/bendy), [Ratatui](https://github.com/ratatui/ratatui), [RustSec](https://rustsec.org/).

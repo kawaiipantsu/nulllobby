@@ -29,3 +29,7 @@ release:
 
 clean:
 	cargo clean
+
+.PHONY: fuzz-smoke
+fuzz-smoke:
+	cargo xtask fuzz-smoke

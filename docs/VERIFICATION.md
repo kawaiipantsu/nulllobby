@@ -1,22 +1,52 @@
-# Phase 1 verification
+# Linux preview verification
 
-Verified locally on Linux x86_64 on 2026-10-03. This is an implementation check, not an independent security audit.
+Version **0.2.0**, checked on 2026-10-03. These are implementation checks, not an independent professional security audit.
+
+## Results
 
 | Check | Result |
 |---|---|
 | `cargo fmt --check` | Passed |
 | `cargo clippy --workspace --all-targets --all-features -- -D warnings` | Passed |
-| `cargo test --workspace` | 30 tests passed |
-| `cargo audit` (0.22.2) | Passed; no known vulnerabilities reported |
-| `cargo deny check` (0.20.2) | Passed; documented `syn` 2/3 duplication warning |
-| `make deb` | Built amd64 Debian package, Linux archive and SHA256SUMS |
-| Release CLI with `HOME=/proc` | Passed; core-dump prevention and both identity secret locks active on the test host |
-| Release binary local path scan | No local source/home paths found in printable strings |
+| `cargo test --workspace` | 57 passed; two external-network tests ignored by default |
+| Experimental Arti unavailable-boundary test | Passed separately with all features |
+| `cargo audit` | No known vulnerabilities in the 175-package locked dependency graph |
+| `cargo deny check` | Advisories, licenses, sources and bans passed; reviewed duplicate-version warnings remain |
+| Nine cargo-fuzz smoke targets | 43,778,214 total executions; no crash in ten seconds per target (11 seconds reported including termination) |
+| Real external Tor 0.4.9.12 | Private onion → Noise → identity proof → encrypted record roundtrip passed; distinct services, explicit SOCKS isolation and cleanup checked |
+| Public Mainline DHT | Live get_peers and token-authorized announce_peer passed, within query/peer limits |
+| Debian package and archive | Built for amd64; checksums verified; extracted binary passed offline diagnostics with HOME=/proc |
+| Source path hygiene | Release binary checked for local source/home paths; no matches |
 
-Compiler: rustc 1.94.1. The local distribution supplies rustfmt 1.9.0 and Clippy 0.1.98; CI pins the complete upstream Rust 1.94.1 toolchain for a consistent runner environment. Cargo.lock contains 48 registry packages and six workspace packages, including developer/build/platform dependencies.
+The stable checks used Rust 1.94.1. Fuzzing used nightly 1.101.0 (2026-10-03), cargo-fuzz 0.13.2 and libfuzzer-sys 0.4.13. Local rustfmt/clippy came from the distribution; CI independently installs matching Rust components.
 
-Test counts: core 15, Direct codec 3, platform 4, transport 3, CLI integration 2, tooling unit 2, tooling integration 1. Tests cover codec rejection paths, capability/identity separation, full fingerprints, scoped trust, terminal controls, bounded queues, Linux process hardening, panic redaction, unwritable HOME and version changes.
+Fuzz totals by target: BitTorrent 16,117,311; BEP 10 521,538; bencode 500,692; cards 4,055,284; invites 1,908,864; Noise framing 3,673,325; application CBOR 6,253,391; endpoints 6,234,111; terminal sanitation 4,513,698. These short runs are smoke tests, not exhaustive campaigns. Valid-checksum/signature semantic paths also require the structured unit/integration tests below.
 
-The local package requires `libc6 >= 2.34` and `libgcc-s1`, as determined from the compiled ELF. This can vary by builder. Package contents contain the offline binary and documentation/licenses, without services or application state directories.
+## Privacy regression map
 
-Not yet exercised or implemented: network confidentiality, BEP 10 negotiation, Noise identity proofs, wrong-PSK sessions, DHT, real Tor fail-closed behavior, per-lobby onion creation/cleanup, signed gossip/replay, GUI/TUI or cargo-fuzz targets. The mode-policy unit test must not be described as a Tor network integration test. See the roadmap before extending claims.
+| Requirement | Evidence |
+|---|---|
+| Independent Ed25519 keys across lobbies/restarts | `identity::tests::independent_lobbies_and_rejoins_have_independent_keys` |
+| Different onion endpoints per lobby | Tor fixture and live service tests |
+| No cross-lobby endpoint advertisements | Core EndpointBook scope test; successful two-lobby Tor app integration |
+| Random public-unlisted IDs | Domain public-ID uniqueness test |
+| Private IDs independent of names | Private generation/KDF tests |
+| Different private PSK and discovery bytes | HKDF separation and RFC 5869 vector tests |
+| No nicknames/names in BEP 10 | Exact truthful extension handshake test; no application metadata fields in encoder |
+| No chat plaintext or Ed25519 identity in captured Direct bytes | Real TCP proxy/capture integration through BitTorrent, BEP 10, Noise and proof |
+| Tor never invokes DHT, UDP, direct peer TCP, trackers or peer DNS | Instrumented unavailable-Tor and successful multi-lobby Tor app tests; external backend failure/invalid destination tests |
+| Wrong PSK never receives lobby metadata | No usable session on wrong PSK/lobby; handshake payloads are empty, proof and application metadata encrypted |
+| ANSI/OSC/bidi neutralized | Core control-character tests, command input test and TUI rendering test |
+| Bounded remote resources | Frame/allocation limits, bounded channels, oversized decoder tests and authenticated-peer flood/disconnect test |
+| Trust does not cross lobbies | Core LobbyTrust scope test and three-peer app test |
+| Endpoint handles do not cross backends | Foreign handle rejection in Tor integration |
+| Explicit secure transition | Direct state trace reaches Secure only after Noise and identity proof |
+| RAM-only Direct with unwritable HOME | Child-process three-peer integration with HOME=/proc, plus extracted CLI diagnostics |
+
+## Boundaries of this evidence
+
+Tests do not establish global anonymity, complete memory erasure, successful delivery across every network partition, universal NAT reachability or safety against a compromised OS. The public network tests are opt-in and may fail under restricted networks; their absence does not trigger fallback. Tor publication timing varies substantially.
+
+The external Tor daemon's normal guard/cache files were preserved; no attempt was made to erase guard state to simulate application RAM-only behavior. Synthetic chat and ephemeral test identities were used. Operational invitations, private identities and control credentials are not included in reports or artifacts.
+
+Embedded Arti and Windows/macOS clients are not implemented. The Arti feature returns Unsupported pending the documented service-state review. See SECURITY.md, the protocol guide and dependency review for exact properties and remaining limits.

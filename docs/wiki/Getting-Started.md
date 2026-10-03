@@ -1,77 +1,56 @@
 # Getting started
 
-## Requirements
+NullLobby is a Linux terminal preview. Direct, external Tor, Noise sessions, signed gossip and manual fingerprint verification are implemented. There is no independent professional security audit.
 
-- Linux x86_64, glibc and a C linker; initial target `x86_64-unknown-linux-gnu`.
-- Rust 1.94 or later with Cargo, rustfmt and Clippy. CI pins 1.94.1.
-- GNU Make for shortcuts. Every helper implementation is Rust in `xtask`.
-- For Debian packages: `dpkg-deb`, `dpkg`, GNU `tar`, and `readelf` from binutils.
-- Git and GitHub CLI only for repository/release tasks. No account is needed to run diagnostics.
+## Build
 
-On Debian/Ubuntu, install distribution build tools using your normal package manager. Obtain a compatible Rust toolchain from a trusted source; no installer is bundled or executed by the application. No Python is used by this project.
-
-## Build from source
+Use Linux x86-64 with Rust 1.94+, a C linker and Make:
 
 ```sh
-git clone https://github.com/kawaiipantsu/nulllobby.git
-cd nulllobby
 make build
-make test
-```
-
-The Makefile delegates to Rust `xtask`. `make build` uses the locked dependency graph and release settings and remaps source/cache paths in compiled output. Direct Cargo equivalent, without automatic path remapping:
-
-```sh
-cargo build --locked --release --target x86_64-unknown-linux-gnu -p nulllobby-cli
-```
-
-No private key, invite or application state is needed to build. Cargo's package cache and compiled artifacts are developer files, not application state.
-
-## Run diagnostics
-
-```sh
-./target/x86_64-unknown-linux-gnu/release/nulllobby --help
-./target/x86_64-unknown-linux-gnu/release/nulllobby --version
-./target/x86_64-unknown-linux-gnu/release/nulllobby --about
-./target/x86_64-unknown-linux-gnu/release/nulllobby --security
 ./target/x86_64-unknown-linux-gnu/release/nulllobby --self-check
+./target/x86_64-unknown-linux-gnu/release/nulllobby
 ```
 
-`--security` and `--self-check` disable core dumps, create temporary secret material and report per-allocation lock status. They do not reveal identities, invites or private material. `Network: inactive` and `Noise: not implemented` are intentional.
+Core-dump prevention must succeed before chat starts. Memory locking is best effort and its actual status appears under `/privacy`. Normal runtime needs no writable HOME. No application config file, chat database or identity storage is created.
 
-There is no chat prompt yet. `--listen`, `--peer`, `--tor-socks`, `--tor-control`, `/join`, `/invite` and other chat commands are planned, not accepted arguments in Phase 1.
+## First lobby
 
-An unwritable HOME is supported by the offline binary:
+1. `/nick operator` selects a cosmetic nickname.
+2. `/create private team` makes a random private capability and a fresh lobby identity.
+3. `/invite` explicitly reveals a card. Esc hides it. Share it only with intended members.
+4. Other users enter `/join <card>`; pasted card input is hidden by the UI once the `/join ` prefix is present.
+5. `/fingerprint` and `/who` show complete SHA-256 fingerprints. Compare them out of band.
+6. `/verify <complete fingerprint>` records your comparison in this lobby only.
+7. Type text and Enter to send. PgUp/PgDn scroll. Ctrl+C or `/quit` shuts down endpoints.
+
+Use `/switch <number>` to select another lobby; `/lobbies` shows numbering. `/leave` removes the current lobby and its state. Rejoining or restarting gives a new identity and loses trust/history. `/reconnect` retries known seeds while the lobby remains active.
+
+## Public choices
+
+`/create public name` is unlisted by default: random rendezvous ID, no authentication secret. Anyone with the card may join. `/create discoverable name` is Direct-only and waits for `/confirm` after an enumeration warning. Names normalize to ASCII lowercase after trimming ASCII whitespace; only 1..64 letters, digits, '-' and '_' are allowed. Discoverable creation with the same normalized name finds the same public namespace.
+
+## Local development
 
 ```sh
-env HOME=/proc ./target/x86_64-unknown-linux-gnu/release/nulllobby --self-check
+nulllobby --no-dht --listen 127.0.0.1:50001
+nulllobby --no-dht --listen 127.0.0.1:50002 --peer 127.0.0.1:50001
 ```
 
-Later Direct networking must retain this property; its runtime test is deferred until that backend exists.
+Create a lobby in the first and join its exported card in the second. This path includes BitTorrent, BEP 10, Noise and identity authentication. Explicit `--peer` values must be numeric IP:port addresses and are Direct-only.
+
+Public Direct connectivity requires a reachable listener on at least one peer. NAT mappings, firewall rules and VPN routing belong to the OS/network; automatic UPnP or NAT hole punching is absent. DHT stores only swarm rendezvous records, never chat or invites.
+
+## Tor
+
+Follow [Tor setup](Tor.md). Choose `--transport tor` at launch or `/transport tor` before creating/joining a lobby. No Direct sockets or DHT are started merely by launching in Tor mode. Transport changes require leaving all lobbies.
 
 ## Debian package
 
 ```sh
 make deb
-dpkg-deb --info dist/nulllobby_0.1.0_amd64.deb
-sudo apt install ./dist/nulllobby_0.1.0_amd64.deb
-nulllobby --security
+sudo apt install ./dist/nulllobby_0.2.0_amd64.deb
+nulllobby
 ```
 
-Replace `0.1.0` with the workspace version after a bump. Installation is optional. Packages install `/usr/bin/nulllobby` and `/usr/share/doc/nulllobby/`; they add no service, user account or state directory. The package contains an offline diagnostic executable, not a usable chat client.
-
-`dist/SHA256SUMS` covers the `.deb` and `.tar.gz`. SHA-256 checksums detect corruption but do not authenticate a download against a compromised release account. Signed provenance is future work. Build from the reviewed source when appropriate.
-
-## Troubleshooting
-
-| Symptom | Action |
-|---|---|
-| Rust is too old | Install Rust 1.94 or later; use CI's pinned version to reproduce its checks |
-| `mlock` reports `Failed` | Inspect your service/container locked-memory limit. Do not assume keys are locked; the allocation still zeroizes on drop |
-| Core-dump prevention fails | Diagnostics refuse to create secrets. Check OS/container syscall restrictions |
-| Package needs a newer libc | Build it on the oldest glibc distribution you intend to support |
-| Missing dependency license text | Packaging stops for review. Do not remove the license gate |
-| `cargo audit` or `cargo deny` unavailable | Install the versions listed in the repository README |
-| No chat/Tor commands | Expected in Phase 1; see the roadmap |
-
-Do not include personal environment details or actual application secrets in bug reports. Error output deliberately omits unsupported argument values and panic payloads.
+The package installs one binary plus documentation/licenses. It creates no service or Tor configuration. A build's minimum glibc is recorded in package dependencies. `--about`, `--version`, `--security` and `--self-check` run without a terminal and without network activity.

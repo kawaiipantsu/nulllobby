@@ -40,6 +40,55 @@ pub enum CardError {
 }
 
 impl LobbyCard {
+    /// ASCII-only discoverable names: trim ASCII whitespace, lowercase, 1..64
+    /// bytes from a-z, 0-9, '-' and '_'. No Unicode normalization ambiguity.
+    pub fn discoverable(name: &str) -> Result<Self, CardError> {
+        let normalized = name
+            .trim_matches(|c: char| c.is_ascii_whitespace())
+            .to_ascii_lowercase();
+        if normalized.is_empty()
+            || normalized.len() > 64
+            || !normalized
+                .bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-' || b == b'_')
+        {
+            return Err(CardError::Malformed);
+        }
+        let mut hash = Sha256::new();
+        hash.update(b"nulllobby.discoverable.v1");
+        hash.update([normalized.len() as u8]);
+        hash.update(normalized.as_bytes());
+        Self::checked(
+            TransportKind::Direct,
+            LobbyKind::PublicDiscoverable,
+            LobbyId::from_bytes(hash.finalize().into()),
+            None,
+            vec![],
+        )
+    }
+    pub fn set_seeds(&mut self, seeds: Vec<Endpoint>) -> Result<(), CardError> {
+        if seeds.len() > limits::CARD_SEEDS
+            || (self.transport == TransportKind::Tor && seeds.is_empty())
+        {
+            return Err(CardError::Limit);
+        }
+        for (i, seed) in seeds.iter().enumerate() {
+            if seed.transport() != self.transport || seeds[..i].contains(seed) {
+                return Err(CardError::Inconsistent);
+            }
+        }
+        self.seeds = seeds;
+        Ok(())
+    }
+    pub fn discovery_scope(&self) -> Result<[u8; 32], SecretError> {
+        if let Some(keys) = self.private_keys()? {
+            return Ok(*keys.discovery.expose_secret());
+        }
+        let mut hash = Sha256::new();
+        hash.update(b"nulllobby.public-discovery.v1");
+        hash.update(self.lobby.as_bytes());
+        Ok(hash.finalize().into())
+    }
     pub fn public(transport: TransportKind, seeds: Vec<Endpoint>) -> Result<Self, CardError> {
         Self::checked(
             transport,
@@ -64,7 +113,7 @@ impl LobbyCard {
         if seeds.len() > limits::CARD_SEEDS {
             return Err(CardError::Limit);
         }
-        if kind == LobbyKind::PublicDiscoverable {
+        if kind == LobbyKind::PublicDiscoverable && transport == TransportKind::Tor {
             return Err(CardError::Unsupported);
         }
         if (kind == LobbyKind::Private) != secret.is_some() {
@@ -115,7 +164,10 @@ impl LobbyCard {
             (TransportKind::Direct, LobbyKind::Private) => "nl:v1:direct-private:",
             (TransportKind::Tor, LobbyKind::PublicUnlisted) => "nl:v1:tor-public:",
             (TransportKind::Tor, LobbyKind::Private) => "nl:v1:tor-private:",
-            (_, LobbyKind::PublicDiscoverable) => unreachable!("validated card kind"),
+            (TransportKind::Direct, LobbyKind::PublicDiscoverable) => "nl:v1:direct-discoverable:",
+            (TransportKind::Tor, LobbyKind::PublicDiscoverable) => {
+                unreachable!("validated card kind")
+            }
         }
     }
     /// Explicit disclosure only. Never automatically print or copy this value.
@@ -200,6 +252,7 @@ impl LobbyCard {
         let kind = match reader.byte()? {
             1 => LobbyKind::PublicUnlisted,
             2 => LobbyKind::Private,
+            3 => LobbyKind::PublicDiscoverable,
             _ => return Err(CardError::Unsupported),
         };
         let lobby = LobbyId::from_bytes(reader.array()?);
@@ -290,6 +343,23 @@ impl<'a> Reader<'a> {
 mod tests {
     use super::*;
     use secrecy::ExposeSecret;
+    #[test]
+    fn discoverable_names_are_precise_and_cards_preserve_warning_type() {
+        let a = LobbyCard::discoverable("  Team-1\t").unwrap();
+        let b = LobbyCard::discoverable("team-1").unwrap();
+        assert_eq!(a.lobby_id(), b.lobby_id());
+        assert_ne!(
+            a.lobby_id(),
+            LobbyCard::discoverable("team-2").unwrap().lobby_id()
+        );
+        assert_eq!(
+            LobbyCard::parse(a.export().expose_secret()).unwrap().kind(),
+            LobbyKind::PublicDiscoverable
+        );
+        for invalid in ["", "équipe", "team name", "team/name", "a\x1b"] {
+            assert!(LobbyCard::discoverable(invalid).is_err());
+        }
+    }
     fn onion() -> Endpoint {
         Endpoint::Onion {
             service_key: [7; 32],

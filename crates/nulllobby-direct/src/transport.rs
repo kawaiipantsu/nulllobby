@@ -1,7 +1,8 @@
 use crate::{Handshake, PeerId, SwarmId, extension};
 use nulllobby_transport::{
-    BoxStream, Endpoint, EndpointHandle, ModePolicy, NetworkAction, NetworkObserver, NetworkStatus,
-    Transport, TransportError, TransportFuture, TransportKind, framing,
+    BoxStream, ConnectionState, Endpoint, EndpointHandle, ModePolicy, NetworkAction,
+    NetworkObserver, NetworkStatus, Transport, TransportError, TransportFuture, TransportKind,
+    framing,
 };
 use std::{
     collections::HashMap,
@@ -42,7 +43,6 @@ pub struct DirectTransport {
     observer: Arc<dyn NetworkObserver>,
     status: NetworkStatus,
     endpoints: HashMap<EndpointHandle, Listener>,
-    next: u64,
     pending: Arc<Semaphore>,
     global: Arc<Semaphore>,
 }
@@ -57,7 +57,6 @@ impl DirectTransport {
             observer,
             status: NetworkStatus::Stopped,
             endpoints: HashMap::new(),
-            next: 0,
             pending: Arc::new(Semaphore::new(32)),
             global,
         }
@@ -67,6 +66,10 @@ impl DirectTransport {
         self.observer
             .before_network_action(NetworkAction::DirectPeerTcp)
     }
+    pub fn with_pending(mut self, pending: Arc<Semaphore>) -> Self {
+        self.pending = pending;
+        self
+    }
     async fn prepare(
         &self,
         mut socket: TcpStream,
@@ -74,12 +77,14 @@ impl DirectTransport {
         permit: OwnedSemaphorePermit,
         global: OwnedSemaphorePermit,
     ) -> Result<BoxStream, TransportError> {
-        let _pending = self
+        let pending = self
             .pending
             .clone()
             .try_acquire_owned()
             .map_err(|_| TransportError::ResourceLimit)?;
         let close = entry.close.subscribe();
+        self.observer
+            .connection_state(ConnectionState::BtHandshaking);
         let handshake = async {
             let local = Handshake::new(
                 entry.swarm,
@@ -97,6 +102,8 @@ impl DirectTransport {
             Handshake::parse(&bytes)
                 .and_then(|h| h.validate_for(entry.swarm))
                 .map_err(|_| TransportError::Unavailable)?;
+            self.observer
+                .connection_state(ConnectionState::ExtensionNegotiating);
             extension::negotiate(&mut socket)
                 .await
                 .map_err(|_| TransportError::Unavailable)
@@ -104,7 +111,15 @@ impl DirectTransport {
         let extension = tokio::time::timeout(Duration::from_secs(10), handshake)
             .await
             .map_err(|_| TransportError::Timeout)??;
-        Ok(bridge(socket, extension, close, permit, global))
+        Ok(bridge(
+            socket,
+            extension,
+            close,
+            permit,
+            global,
+            pending,
+            self.observer.clone(),
+        ))
     }
 }
 impl Transport for DirectTransport {
@@ -137,11 +152,7 @@ impl Transport for DirectTransport {
             let listener = TcpListener::bind(self.config.listen)
                 .await
                 .map_err(|_| TransportError::Unavailable)?;
-            self.next = self
-                .next
-                .checked_add(1)
-                .ok_or(TransportError::ResourceLimit)?;
-            let handle = EndpointHandle(self.next);
+            let handle = EndpointHandle::allocate()?;
             let mut swarm = [0; 20];
             swarm.copy_from_slice(&scope[..20]);
             let (close, _) = watch::channel(false);
@@ -179,6 +190,7 @@ impl Transport for DirectTransport {
                 .endpoints
                 .get(&local)
                 .ok_or(TransportError::Unavailable)?;
+            self.observer.connection_state(ConnectionState::Connecting);
             let permit = entry
                 .peers
                 .clone()
@@ -252,9 +264,20 @@ struct Bridge {
     task: JoinHandle<()>,
     _peer: OwnedSemaphorePermit,
     _global: OwnedSemaphorePermit,
+    pending: Option<OwnedSemaphorePermit>,
+    observer: Arc<dyn NetworkObserver>,
+}
+impl nulllobby_transport::ByteStream for Bridge {
+    fn connection_state(&mut self, state: ConnectionState) {
+        self.observer.connection_state(state);
+    }
+    fn authenticated(&mut self) {
+        self.pending.take();
+    }
 }
 impl Drop for Bridge {
     fn drop(&mut self) {
+        self.observer.connection_state(ConnectionState::Closing);
         self.task.abort();
     }
 }
@@ -288,6 +311,8 @@ fn bridge(
     mut close: watch::Receiver<bool>,
     peer: OwnedSemaphorePermit,
     global: OwnedSemaphorePermit,
+    pending: OwnedSemaphorePermit,
+    observer: Arc<dyn NetworkObserver>,
 ) -> BoxStream {
     let (client, adapter) = tokio::io::duplex(65_536);
     let task = tokio::spawn(async move {
@@ -332,5 +357,7 @@ fn bridge(
         task,
         _peer: peer,
         _global: global,
+        pending: Some(pending),
+        observer,
     })
 }

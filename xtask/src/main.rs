@@ -34,6 +34,7 @@ fn run() -> Result<()> {
         ["build"] => build(),
         ["deb"] => deb(),
         ["check"] => check(),
+        ["fuzz-smoke"] => fuzz_smoke(),
         ["bump", level] => bump(level),
         ["release"] => release(),
         ["announce", tag] => announce(tag),
@@ -118,7 +119,7 @@ fn build() -> Result<()> {
             "--target",
             TARGET,
             "--package",
-            "nulllobby-cli",
+            "nulllobby-tui",
         ])
         .env("CARGO_ENCODED_RUSTFLAGS", flags)
         .status()?;
@@ -129,7 +130,7 @@ fn build() -> Result<()> {
 }
 fn deb() -> Result<()> {
     if output("dpkg", &["--print-architecture"])? != "amd64" {
-        return Err("Phase 1 Debian packaging requires an amd64 Linux builder".into());
+        return Err("Debian packaging requires an amd64 Linux builder".into());
     }
     build()?;
     command("cargo", &["fetch", "--locked"])?;
@@ -160,7 +161,7 @@ fn deb() -> Result<()> {
     fs::write(
         stage.join("DEBIAN/control"),
         format!(
-            "Package: nulllobby\nVersion: {version}\nSection: net\nPriority: optional\nArchitecture: amd64\nMaintainer: NullLobby maintainers\nDepends: libc6 (>= {minimum}), libgcc-s1\nHomepage: https://thugs.red\nDescription: NullLobby offline Phase 1 foundations\n Diagnostic CLI and documentation; chat, Direct networking and Tor are not yet implemented.\n"
+            "Package: nulllobby\nVersion: {version}\nSection: net\nPriority: optional\nArchitecture: amd64\nMaintainer: NullLobby maintainers\nDepends: libc6 (>= {minimum}), libgcc-s1\nSuggests: tor\nHomepage: https://thugs.red\nDescription: RAM-first encrypted decentralized lobby chat\n Linux terminal client with signed messages, Direct P2P and external Tor onion transport.\n"
         ),
     )?;
     fs::create_dir_all("dist")?;
@@ -305,7 +306,7 @@ fn release() -> Result<()> {
             "--target",
             &commit,
             "--title",
-            &format!("NullLobby {version} — Phase 1 foundations"),
+            &format!("NullLobby {version} — Linux preview"),
             "--notes-file",
             "docs/RELEASE-NOTES.md",
         ],
@@ -317,6 +318,7 @@ fn release() -> Result<()> {
 }
 
 fn dependency_notices() -> Result<String> {
+    let mut missing = Vec::new();
     let cargo_home = std::env::var_os("CARGO_HOME")
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".cargo")))
@@ -332,7 +334,7 @@ fn dependency_notices() -> Result<String> {
             "--target",
             TARGET,
             "--package",
-            "nulllobby-cli",
+            "nulllobby-tui",
             "--edges",
             "normal,build",
             "--prefix",
@@ -374,6 +376,17 @@ fn dependency_notices() -> Result<String> {
         notices.push_str(&format!("===== {name} {version} =====\n"));
         for file in files {
             let name = file.file_name().to_string_lossy().to_uppercase();
+            if file.file_type()?.is_dir() && name == "LICENSES" {
+                let mut nested = fs::read_dir(file.path())?.collect::<std::io::Result<Vec<_>>>()?;
+                nested.sort_by_key(|entry| entry.file_name());
+                for license in nested {
+                    if license.file_type()?.is_file() {
+                        notices.push_str(&fs::read_to_string(license.path())?);
+                        notices.push_str("\n\n");
+                        found = true;
+                    }
+                }
+            }
             if file.file_type()?.is_file()
                 && (name.starts_with("LICENSE")
                     || name.starts_with("COPYING")
@@ -385,8 +398,21 @@ fn dependency_notices() -> Result<String> {
             }
         }
         if !found {
-            return Err(format!("missing license text for {name}; review packaging").into());
+            let reviewed = Path::new("packaging/licenses").join(format!("{name}-{version}.txt"));
+            if reviewed.is_file() {
+                notices.push_str(&fs::read_to_string(reviewed)?);
+                notices.push_str("\n\n");
+            } else {
+                missing.push(format!("{name}-{version}"));
+            }
         }
+    }
+    if !missing.is_empty() {
+        return Err(format!(
+            "missing license texts: {}; review packaging",
+            missing.join(", ")
+        )
+        .into());
     }
     Ok(notices)
 }
@@ -477,6 +503,39 @@ fn announce(tag: &str) -> Result<()> {
         ],
     )?;
     println!("{result}");
+    Ok(())
+}
+
+fn fuzz_smoke() -> Result<()> {
+    let toolchain = format!(
+        "+{}",
+        std::env::var("NULLLOBBY_FUZZ_TOOLCHAIN").unwrap_or_else(|_| "nightly".to_owned())
+    );
+    for target in [
+        "bt_handshake",
+        "bep10",
+        "bencode",
+        "lobby_card",
+        "invite",
+        "noise_outer",
+        "application",
+        "endpoint",
+        "terminal",
+    ] {
+        command(
+            "cargo",
+            &[
+                &toolchain,
+                "fuzz",
+                "run",
+                target,
+                "--",
+                "-max_total_time=10",
+                "-max_len=65536",
+                "-rss_limit_mb=512",
+            ],
+        )?;
+    }
     Ok(())
 }
 

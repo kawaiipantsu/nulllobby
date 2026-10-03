@@ -110,6 +110,7 @@ impl SecureSession {
         psk: Option<&NoisePsk>,
         initiator: bool,
     ) -> Result<Self, SessionError> {
+        stream.connection_state(nulllobby_transport::ConnectionState::NoiseHandshaking);
         let suite = if psk.is_some() {
             PRIVATE_SUITE
         } else {
@@ -154,6 +155,7 @@ impl SecureSession {
             .try_into()
             .map_err(|_| SessionError::Authentication)?;
         let mut noise = handshake.into_transport_mode()?;
+        stream.connection_state(nulllobby_transport::ConnectionState::AuthenticatingIdentity);
         let local_proof = proof(local, &hash)?;
         let len = noise.write_message(&local_proof, &mut *scratch)?;
         framing::write(&mut stream, framing::CIPHERTEXT, &scratch[..len]).await?;
@@ -166,6 +168,8 @@ impl SecureSession {
         if peer == local.public_key() {
             return Err(SessionError::Authentication);
         }
+        stream.authenticated();
+        stream.connection_state(nulllobby_transport::ConnectionState::Secure);
         Ok(Self {
             stream,
             noise,

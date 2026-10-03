@@ -1,5 +1,6 @@
 //! Phase 1 only: BEP 3 handshake codec. No TCP, DHT or BEP 10 negotiation.
 #![forbid(unsafe_code)]
+pub mod discovery;
 pub mod extension;
 mod transport;
 pub use transport::{DirectConfig, DirectTransport};

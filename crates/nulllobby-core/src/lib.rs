@@ -1,9 +1,10 @@
-//! Offline foundations. No messaging, encryption sessions, persistence or networking yet.
+//! Transport-independent lobby identities, cryptography and bounded application protocol.
 #![forbid(unsafe_code)]
 
 pub mod branding;
 pub mod card;
 pub mod domain;
+pub mod endpoint;
 pub mod identity;
 pub mod message;
 pub mod replay;

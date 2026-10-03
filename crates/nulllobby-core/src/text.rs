@@ -1,8 +1,14 @@
 //! All display text must pass this boundary, even after signature verification.
 use std::fmt;
+use zeroize::Zeroize;
 
 #[derive(Clone, Eq, PartialEq)]
 pub struct ValidatedText<const MAX: usize>(String);
+impl<const MAX: usize> Drop for ValidatedText<MAX> {
+    fn drop(&mut self) {
+        self.0.zeroize();
+    }
+}
 #[derive(Debug, thiserror::Error, Eq, PartialEq)]
 pub enum TextError {
     #[error("text length out of bounds")]

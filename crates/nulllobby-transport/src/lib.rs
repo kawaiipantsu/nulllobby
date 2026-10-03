@@ -1,6 +1,7 @@
-//! Transport-neutral byte streams. There is no network implementation in Phase 1.
+//! Transport-neutral byte streams and instrumentation for fail-closed network policy.
 #![forbid(unsafe_code)]
 pub mod framing;
+pub mod scoped;
 
 use std::{future::Future, net::IpAddr, num::NonZeroU16, pin::Pin};
 use thiserror::Error;
@@ -38,9 +39,23 @@ impl Endpoint {
 /// Opaque, process-local handle; backends must reject handles from another scope.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub struct EndpointHandle(pub u64);
+impl EndpointHandle {
+    /// Unique within the process, including across independently owned backends.
+    pub fn allocate() -> Result<Self, TransportError> {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static NEXT: AtomicU64 = AtomicU64::new(1);
+        NEXT.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_add(1))
+            .map(Self)
+            .map_err(|_| TransportError::ResourceLimit)
+    }
+}
 
-pub trait ByteStream: AsyncRead + AsyncWrite + Unpin + Send {}
-impl<T: AsyncRead + AsyncWrite + Unpin + Send> ByteStream for T {}
+pub trait ByteStream: AsyncRead + AsyncWrite + Unpin + Send {
+    fn connection_state(&mut self, _state: ConnectionState) {}
+    /// Release the pending-handshake resource only after core validates identity.
+    fn authenticated(&mut self) {}
+}
+impl ByteStream for tokio::io::DuplexStream {}
 pub type BoxStream = Box<dyn ByteStream>;
 pub type TransportFuture<'a, T> =
     Pin<Box<dyn Future<Output = Result<T, TransportError>> + Send + 'a>>;
@@ -87,8 +102,8 @@ pub trait Transport: Send + Sync {
     fn network_status(&self) -> NetworkStatus;
 }
 
-/// A future backend must call this instrumentation boundary before each operation.
-/// This is a policy building block, not proof that an unimplemented backend obeys it.
+/// Backends call this instrumentation boundary before network operations.
+/// Backend integration tests exercise this policy in addition to unit tests.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum NetworkAction {
     MainlineDht,
@@ -102,6 +117,21 @@ pub enum NetworkAction {
 
 pub trait NetworkObserver: Send + Sync {
     fn before_network_action(&self, action: NetworkAction) -> Result<(), TransportError>;
+    fn connection_state(&self, _state: ConnectionState) {}
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ConnectionState {
+    Connecting,
+    BtHandshaking,
+    ExtensionNegotiating,
+    TorBootstrapping,
+    CreatingOnion,
+    ConnectingOnion,
+    NoiseHandshaking,
+    AuthenticatingIdentity,
+    Secure,
+    Closing,
 }
 
 pub struct ModePolicy(pub TransportKind);

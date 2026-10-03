@@ -12,6 +12,9 @@ thiserror.workspace = true
 tokio = { workspace = true, features = ["net", "rt", "macros", "time"] }
 nulllobby-transport.workspace = true
 bendy = "0.6.1"
+# Only maintained BEP 42 identity helpers; the upstream actor's unbounded queues
+# are deliberately disabled. Our discovery client has explicit query budgets.
+mainline = { version = "8.0.1", default-features = false }
 
 [lints]
 workspace = true

@@ -1,0 +1,28 @@
+[package]
+name = "nulllobby-tui"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "nulllobby"
+path = "src/main.rs"
+
+[features]
+tor-arti-experimental = ["nulllobby-app/tor-arti-experimental"]
+
+[dependencies]
+nulllobby-core.workspace = true
+nulllobby-platform.workspace = true
+nulllobby-transport.workspace = true
+nulllobby-app.workspace = true
+ratatui = { version = "0.30.2", default-features = false, features = ["crossterm_0_29", "unstable-rendered-line-info"] }
+crossterm = { version = "0.29.0", default-features = false, features = ["events"] }
+tokio = { workspace = true, features = ["rt-multi-thread"] }
+secrecy.workspace = true
+zeroize.workspace = true
+
+[lints]
+workspace = true

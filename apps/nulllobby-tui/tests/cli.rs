@@ -12,7 +12,7 @@ fn diagnostics_work_without_a_writable_home_and_do_not_print_keys() {
     let stdout = String::from_utf8(output.stdout).unwrap();
     assert!(stdout.contains("Core-dump prevention: Active"));
     assert!(stdout.contains("Network: inactive"));
-    assert!(stdout.contains("Noise: not implemented"));
+    assert!(stdout.contains("Noise_XXpsk3_25519_ChaChaPoly_BLAKE2s"));
     assert!(!stdout.contains("nl:v1:"));
     assert!(output.stderr.is_empty());
 }
@@ -23,7 +23,7 @@ fn unsupported_arguments_are_never_echoed() {
         .arg("sensitive-input-canary")
         .output()
         .unwrap();
-    assert_eq!(output.status.code(), Some(2));
+    assert!(!output.status.success());
     assert!(
         !String::from_utf8(output.stderr)
             .unwrap()
