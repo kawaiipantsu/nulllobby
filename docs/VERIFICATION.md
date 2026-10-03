@@ -18,7 +18,7 @@ Version **0.2.0**, checked on 2026-10-03. These are implementation checks, not a
 | Debian package and archive | Built for amd64; checksums verified; extracted binary passed offline diagnostics with HOME=/proc |
 | Source path hygiene | Release binary checked for local source/home paths; no matches |
 
-The stable checks used Rust 1.94.1. Fuzzing used nightly 1.101.0 (2026-10-03), cargo-fuzz 0.13.2 and libfuzzer-sys 0.4.13. Local rustfmt/clippy came from the distribution; CI independently installs matching Rust components.
+The final stable checks used Rust 1.94.1 with its matching rustfmt and Clippy components. Fuzzing used nightly 1.101.0 (2026-10-03), cargo-fuzz 0.13.2 and libfuzzer-sys 0.4.13. CI independently installs the same pinned toolchains.
 
 Fuzz totals by target: BitTorrent 16,117,311; BEP 10 521,538; bencode 500,692; cards 4,055,284; invites 1,908,864; Noise framing 3,673,325; application CBOR 6,253,391; endpoints 6,234,111; terminal sanitation 4,513,698. These short runs are smoke tests, not exhaustive campaigns. Valid-checksum/signature semantic paths also require the structured unit/integration tests below.
 

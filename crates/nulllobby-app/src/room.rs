@@ -624,10 +624,10 @@ impl Room {
                 }
             }
             Net::Packet(key, generation, packet) => {
-                if !self
+                if self
                     .peers
                     .get(&key)
-                    .is_some_and(|p| p.generation == generation)
+                    .is_none_or(|p| p.generation != generation)
                 {
                     return;
                 }
