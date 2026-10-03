@@ -81,7 +81,7 @@ nulllobby --transport tor \
 
 The daemon must finish bootstrapping first. NullLobby uses SAFECOOKIE mutual authentication, creates a distinct non-detached ephemeral v3 onion service for each lobby, and deletes it on leave. Tor cards need a reachable seed; otherwise the client reports `No reachable Tor lobby seed`. The daemon retains its normal guards/cache; NullLobby does not reset them. See the [Tor guide](docs/wiki/Tor.md).
 
-Windows/macOS GUI clients and an embedded Arti backend remain future work. The `tor-arti-experimental` feature reserves an explicitly unavailable backend boundary pending the [storage review](docs/wiki/Arti-Review.md); it does not enable an embedded client.
+An **experimental embedded Arti backend** is available with `make build-arti` and `--transport tor --tor-backend arti --arti-state /absolute/state --arti-cache /absolute/cache`. It uses a reviewed local storage patch to keep per-lobby onion keys/state in RAM while preserving normal Tor guards/cache. See the [Arti guide](docs/wiki/Arti-Review.md) and [dependency/advisory review](docs/ARTI-DEPENDENCIES.md). The standard build uses external Tor; neither backend substitutes another backend on failure. Windows/macOS GUI clients remain future work.
 
 ## Architecture
 
@@ -109,6 +109,7 @@ cargo install cargo-audit --version 0.22.2 --locked --no-default-features
 cargo install cargo-deny --version 0.20.2 --locked
 make check
 make deb
+make deb-arti          # separate experimental embedded-Tor package
 make bump-patch        # also bump-minor / bump-major
 # Review, commit and push the version change:
 make release           # validates and creates a draft GitHub release
@@ -125,7 +126,7 @@ cargo test --locked --workspace
 
 ## Documentation and contribution
 
-[Getting started](docs/wiki/Getting-Started.md) · [Architecture](docs/wiki/Architecture.md) · [Protocol](docs/wiki/Protocol.md) · [Privacy](docs/wiki/Privacy.md) · [Tor](docs/wiki/Tor.md) · [Development](docs/wiki/Development.md) · [Releases](docs/wiki/Releases.md) · [Verification](docs/VERIFICATION.md) · [Dependency review](docs/DEPENDENCIES.md)
+[Getting started](docs/wiki/Getting-Started.md) · [Architecture](docs/wiki/Architecture.md) · [Protocol](docs/wiki/Protocol.md) · [Privacy](docs/wiki/Privacy.md) · [Tor](docs/wiki/Tor.md) · [Development](docs/wiki/Development.md) · [Releases](docs/wiki/Releases.md) · [Verification](docs/ARTI-VERIFICATION.md) · [Dependency review](docs/DEPENDENCIES.md)
 
 Use [Discussions](https://github.com/kawaiipantsu/nulllobby/discussions) for feature, encryption, lobby and workflow ideas. Use synthetic examples in reports; never publish operational chat, invites, credentials, private keys or personal environment details. See [CONTRIBUTING.md](CONTRIBUTING.md).
 

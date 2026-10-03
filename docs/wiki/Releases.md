@@ -1,6 +1,6 @@
 # Building and publishing releases
 
-All project helper logic is Rust in `xtask`. Make is a command shortcut. The Linux preview packages the terminal client and external Tor support. Release notes must retain the unaudited status and deferred Arti/desktop scope.
+All project helper logic is Rust in `xtask`. Make is a command shortcut. The standard Linux package includes external Tor support. `make deb-arti` builds a separate experimental embedded-Arti package, with its full dependency notices and advisory review. Release notes retain the unaudited and experimental status; desktop clients are deferred.
 
 ## Local build and packages
 
@@ -9,11 +9,11 @@ make check
 make deb
 ```
 
-Outputs for version 0.2.0:
+Outputs for version 0.3.0:
 
 ```text
-dist/nulllobby_0.2.0_amd64.deb
-dist/nulllobby_0.2.0_x86_64-unknown-linux-gnu.tar.gz
+dist/nulllobby_0.3.0_amd64.deb
+dist/nulllobby_0.3.0_x86_64-unknown-linux-gnu.tar.gz
 dist/SHA256SUMS
 ```
 
@@ -24,12 +24,12 @@ The package stage lives under `target/debian-stage`. No package is installed aut
 ## Version bumps
 
 ```sh
-make bump-patch  # 0.2.0 -> 0.2.1
-make bump-minor  # 0.2.0 -> 0.3.0
-make bump-major  # 0.2.0 -> 1.0.0
+make bump-patch  # 0.3.0 -> 0.3.1
+make bump-minor  # 0.3.0 -> 0.4.0
+make bump-major  # 0.3.0 -> 1.0.0
 ```
 
-Choose **one** command per intended bump. It updates `[workspace.package].version`, exact internal workspace dependency versions and every workspace package version in Cargo.lock. It does not change registry dependency versions, commit, tag or publish. Lower version components reset for major/minor; invalid levels/overflow fail.
+Choose **one** command per intended bump. It updates `[workspace.package].version`, exact internal workspace dependency versions and workspace package versions in Cargo.lock and fuzz/Cargo.lock. Vendored upstream and fuzz-harness package versions are preserved. It does not change registry dependency versions, commit, tag or publish. Lower version components reset for major/minor; invalid levels/overflow fail.
 
 Review the diff, update `docs/RELEASE-NOTES.md`, run checks, commit using your configured global Git identity and push to `main`. The CLI version and artifact filenames follow the workspace version automatically.
 
@@ -41,7 +41,7 @@ Prerequisites: authenticated `gh` with repository release permission, a clean tr
 make release
 ```
 
-This reruns all checks, builds packages and creates a **draft** `v<version>` release targeted at the exact published commit. It attaches `.deb`, `.tar.gz` and checksums, using `docs/RELEASE-NOTES.md` without shell interpolation. A duplicate tag/release fails through GitHub instead of overwriting it.
+This reruns all checks, builds packages and creates a **draft** `v<version>` release targeted at the exact published commit. It attaches standard and separately named experimental-Arti `.deb`/`.tar.gz` artifacts with separate checksum files, using `docs/RELEASE-NOTES.md` without shell interpolation. A duplicate tag/release fails through GitHub instead of overwriting it.
 
 Review the draft's scope and artifacts in GitHub, then publish it. This is an explicit maintainer action; building or bumping never publishes automatically.
 
@@ -52,7 +52,7 @@ The `release-notification.yml` workflow runs on a published release, with `discu
 Manual recovery after an unsuccessful workflow:
 
 ```sh
-cargo xtask announce v0.2.0
+cargo xtask announce v0.3.0
 ```
 
 Run from the checked-out release commit with authenticated `gh`. Release-body data is passed as structured command arguments, not shell code. Do not put secrets into release notes, source fixtures or package metadata. Changing feature maturity requires updating the notes before the release.

@@ -8,6 +8,8 @@ All application/helper/test/fuzz code is Rust. No Python is used. Required stabl
 cargo fmt --check
 cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
 cargo test --locked --workspace
+cargo test --locked --workspace --all-features
+cargo test --locked --manifest-path vendor/tor-hsservice/Cargo.toml --lib --features ephemeral-service
 cargo audit
 cargo deny check
 ```
@@ -23,6 +25,17 @@ cargo test -p nulllobby-direct --test live_dht -- --ignored
 ```
 
 Normal CI does not depend on public Tor or DHT availability.
+
+The optional Arti backend also has a live onion/Noise/storage/cleanup test:
+
+```sh
+NULLLOBBY_TEST_ARTI_STATE=/absolute/path/to/tor-state \
+NULLLOBBY_TEST_ARTI_CACHE=/absolute/path/to/tor-cache \
+cargo test -p nulllobby-tor --features tor-arti-experimental \
+  --test arti real_arti -- --ignored --nocapture
+```
+
+Keep those Tor guard/cache directories across tests. They must be distinct and absolute. The test creates fresh RAM-only onion services; it does not remove normal Tor state. Review [Arti](Arti-Review.md) before enabling the backend.
 
 ## Fuzzing
 

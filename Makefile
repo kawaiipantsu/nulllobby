@@ -1,10 +1,13 @@
-.PHONY: help build test check deb bump-major bump-minor bump-patch release clean
+.PHONY: help build build-arti test check deb deb-arti bump-major bump-minor bump-patch release clean
 
 help:
-	@echo 'build | test | check | deb | bump-major | bump-minor | bump-patch | release | clean'
+	@echo 'build | build-arti | test | check | deb | deb-arti | bump-major | bump-minor | bump-patch | release | fuzz-smoke | clean'
 
 build:
 	cargo xtask build
+
+build-arti:
+	cargo xtask build-arti
 
 test:
 	cargo test --locked --workspace
@@ -14,6 +17,9 @@ check:
 
 deb:
 	cargo xtask deb
+
+deb-arti:
+	cargo xtask deb-arti
 
 bump-major:
 	cargo xtask bump major

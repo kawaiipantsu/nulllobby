@@ -1,16 +1,17 @@
-## Linux preview
+## NullLobby 0.3.0 — experimental embedded Arti
 
-NullLobby now includes a Ratatui terminal client and the shared Rust networking/security core.
+The Linux client can now use embedded Arti behind `tor-arti-experimental`. External Tor remains the default Tor backend.
 
-- Direct TCP uses the standard BitTorrent handshake, truthful NL_chat BEP 10 negotiation, bounded Mainline DHT discovery, Noise and encrypted identity proof.
-- Public unlisted lobbies use random IDs. Private lobbies use 256-bit capabilities and XXpsk3. Discoverable Direct lobbies require an explicit enumeration warning confirmation.
-- Independent per-lobby identities, full fingerprints, manual scoped verification, signed gossip, replay protection and bounded encrypted padding.
-- External Tor uses SAFECOOKIE, onion-only SOCKS and distinct non-detached ephemeral v3 services per lobby. Tor failure never selects Direct.
-- RAM-only application history/identity/trust, Linux core-dump controls, honest secret-memory lock reporting, strict terminal sanitation and bounded resources.
-- Deterministic integration tests, opt-in live Tor/DHT smoke tests, nine Rust fuzz targets, Debian packages and version/release tooling.
+- Arti 0.47.0 with distinct ephemeral onion services and native outgoing stream isolation per lobby.
+- A documented local `tor-hsservice` patch keeps service keys, publication state and replay filters in RAM. Ordinary Tor guard state and directory cache remain persistent in explicitly configured paths.
+- The same Noise, identity proof, signed gossip and trust rules apply to Direct, external Tor and embedded Arti. Backend failures never select another transport.
+- Bootstrap progress, bounded service handlers, resource accounting and service/stream cleanup.
+- Separate standard and experimental Debian packages, dependency notices, and version bumps that preserve vendored and fuzz harness versions.
 
-### Limits
+Build the standard package with `make deb`, or explicitly select `make deb-arti`. The experimental package additionally requires `libsqlite3-0` for Arti's Tor directory cache; it does not store chat there. Packages conflict because both install `/usr/bin/nulllobby`.
 
-Direct exposes IPs and recognizable BitTorrent/extension metadata. Tor does not guarantee anonymity against traffic correlation. Restarting loses identities, trust and history. Delivery acknowledgements, durable/offline delivery, automatic NAT traversal and capability revocation are absent.
+### Review before enabling Arti
 
-No independent professional security audit has yet been completed. Internal cryptographic library state is not all locked or guaranteed to zeroize. Embedded Arti remains explicitly unavailable pending per-service RAM-state review. Windows/macOS desktop clients are deferred.
+The backend includes a local change to security-sensitive upstream code. It is experimental and has not received an independent professional security audit. The expanded dependency graph has a documented RSA advisory applicability exception and transitive maintenance warnings; see [the dependency assessment](https://github.com/kawaiipantsu/nulllobby/blob/main/docs/ARTI-DEPENDENCIES.md).
+
+Direct exposes peer IPs. Tor cannot guarantee protection against sufficiently powerful traffic correlation. Restart loses application identities, trust and history. Delivery acknowledgements, durable offline delivery, automatic NAT traversal and capability revocation remain absent. Windows/macOS desktop clients remain deferred.

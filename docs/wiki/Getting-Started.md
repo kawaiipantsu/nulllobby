@@ -49,7 +49,7 @@ Follow [Tor setup](Tor.md). Choose `--transport tor` at launch or `/transport to
 
 ```sh
 make deb
-sudo apt install ./dist/nulllobby_0.2.0_amd64.deb
+sudo apt install ./dist/nulllobby_0.3.0_amd64.deb
 nulllobby
 ```
 

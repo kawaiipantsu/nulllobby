@@ -49,4 +49,4 @@ Tests do not establish global anonymity, complete memory erasure, successful del
 
 The external Tor daemon's normal guard/cache files were preserved; no attempt was made to erase guard state to simulate application RAM-only behavior. Synthetic chat and ephemeral test identities were used. Operational invitations, private identities and control credentials are not included in reports or artifacts.
 
-Embedded Arti and Windows/macOS clients are not implemented. The Arti feature returns Unsupported pending the documented service-state review. See SECURITY.md, the protocol guide and dependency review for exact properties and remaining limits.
+This report records version 0.2.0. Version 0.3.0 adds experimental embedded Arti; see [Arti verification](ARTI-VERIFICATION.md). Windows/macOS clients remain deferred. See SECURITY.md, the protocol guide and dependency review for current properties and remaining limits.

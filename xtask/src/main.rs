@@ -31,8 +31,10 @@ fn run() -> Result<()> {
         .collect::<Vec<_>>()
         .as_slice()
     {
-        ["build"] => build(),
-        ["deb"] => deb(),
+        ["build"] => build(false),
+        ["build-arti"] => build(true),
+        ["deb"] => deb(false),
+        ["deb-arti"] => deb(true),
         ["check"] => check(),
         ["fuzz-smoke"] => fuzz_smoke(),
         ["bump", level] => bump(level),
@@ -81,11 +83,15 @@ fn check() -> Result<()> {
         ],
     )?;
     command("cargo", &["test", "--locked", "--workspace"])?;
+    command(
+        "cargo",
+        &["test", "--locked", "--workspace", "--all-features"],
+    )?;
     // Release checks deliberately require both tools; do not silently skip security gates.
     command("cargo", &["audit"])?;
     command("cargo", &["deny", "check"])
 }
-fn build() -> Result<()> {
+fn build(arti: bool) -> Result<()> {
     let root = std::env::current_dir()?;
     let mut flags = std::env::var("CARGO_ENCODED_RUSTFLAGS").unwrap_or_default();
     if flags.is_empty() {
@@ -111,28 +117,30 @@ fn build() -> Result<()> {
         }
         flags.push_str(&remap);
     }
-    let status = Command::new("cargo")
-        .args([
-            "build",
-            "--locked",
-            "--release",
-            "--target",
-            TARGET,
-            "--package",
-            "nulllobby-tui",
-        ])
-        .env("CARGO_ENCODED_RUSTFLAGS", flags)
-        .status()?;
+    let mut cargo = Command::new("cargo");
+    cargo.args([
+        "build",
+        "--locked",
+        "--release",
+        "--target",
+        TARGET,
+        "--package",
+        "nulllobby-tui",
+    ]);
+    if arti {
+        cargo.args(["--features", "tor-arti-experimental"]);
+    }
+    let status = cargo.env("CARGO_ENCODED_RUSTFLAGS", flags).status()?;
     if !status.success() {
         return Err("release build failed".into());
     }
     Ok(())
 }
-fn deb() -> Result<()> {
+fn deb(arti: bool) -> Result<()> {
     if output("dpkg", &["--print-architecture"])? != "amd64" {
         return Err("Debian packaging requires an amd64 Linux builder".into());
     }
-    build()?;
+    build(arti)?;
     command("cargo", &["fetch", "--locked"])?;
     let version = version()?;
     let stage = Path::new("target/debian-stage");
@@ -153,19 +161,40 @@ fn deb() -> Result<()> {
     )?;
     fs::write(
         stage.join("usr/share/doc/nulllobby/THIRD-PARTY-NOTICES.txt"),
-        dependency_notices()?,
+        dependency_notices(arti)?,
     )?;
     // Derive glibc minimum from ELF version requirements on the actual built binary.
     let elf = output("readelf", &["--version-info", &binary])?;
     let minimum = glibc_requirement(&elf)?;
+    let package = if arti {
+        "nulllobby-arti-experimental"
+    } else {
+        "nulllobby"
+    };
+    let extra = if arti {
+        "Provides: nulllobby\nConflicts: nulllobby\nReplaces: nulllobby\n"
+    } else {
+        ""
+    };
+    let libraries = if arti { ", libsqlite3-0" } else { "" };
+    if arti {
+        for file in ["docs/ARTI-DEPENDENCIES.md", "docs/wiki/Arti-Review.md"] {
+            fs::copy(
+                file,
+                stage
+                    .join("usr/share/doc/nulllobby")
+                    .join(Path::new(file).file_name().ok_or("missing filename")?),
+            )?;
+        }
+    }
     fs::write(
         stage.join("DEBIAN/control"),
         format!(
-            "Package: nulllobby\nVersion: {version}\nSection: net\nPriority: optional\nArchitecture: amd64\nMaintainer: NullLobby maintainers\nDepends: libc6 (>= {minimum}), libgcc-s1\nSuggests: tor\nHomepage: https://thugs.red\nDescription: RAM-first encrypted decentralized lobby chat\n Linux terminal client with signed messages, Direct P2P and external Tor onion transport.\n"
+            "Package: {package}\nVersion: {version}\nSection: net\nPriority: optional\nArchitecture: amd64\nMaintainer: NullLobby maintainers\nDepends: libc6 (>= {minimum}), libgcc-s1{libraries}\nSuggests: tor\n{extra}Homepage: https://thugs.red\nDescription: RAM-first encrypted decentralized lobby chat\n Linux terminal client with signed messages, Direct P2P and Tor onion transport.\n Embedded Arti support in this package: {arti}.\n"
         ),
     )?;
     fs::create_dir_all("dist")?;
-    let name = format!("nulllobby_{version}_amd64.deb");
+    let name = format!("{package}_{version}_amd64.deb");
     command(
         "dpkg-deb",
         &[
@@ -175,7 +204,7 @@ fn deb() -> Result<()> {
             &format!("dist/{name}"),
         ],
     )?;
-    let tar = format!("nulllobby_{version}_{TARGET}.tar.gz");
+    let tar = format!("{package}_{version}_{TARGET}.tar.gz");
     command(
         "tar",
         &[
@@ -200,7 +229,14 @@ fn deb() -> Result<()> {
             .collect::<String>();
         checksums.push_str(&format!("{hex}  {file}\n"));
     }
-    fs::write("dist/SHA256SUMS", checksums)?;
+    fs::write(
+        if arti {
+            "dist/SHA256SUMS-arti"
+        } else {
+            "dist/SHA256SUMS"
+        },
+        checksums,
+    )?;
     println!("Built Debian package, Linux archive and SHA256SUMS in dist/");
     Ok(())
 }
@@ -255,19 +291,41 @@ fn bump(level: &str) -> Result<()> {
             dependency["version"] = value(format!("={next}"));
         }
     }
-    let mut lock: DocumentMut = fs::read_to_string("Cargo.lock")?.parse()?;
+    let mut names = vec!["xtask".to_owned()];
+    for (name, dependency) in manifest["workspace"]["dependencies"]
+        .as_table()
+        .ok_or("missing dependencies")?
+    {
+        if dependency.get("path").is_some() {
+            names.push(name.to_owned());
+        }
+    }
+    names.push("nulllobby-tui".to_owned());
+    for path in ["Cargo.lock", "fuzz/Cargo.lock"] {
+        let mut lock: DocumentMut = fs::read_to_string(path)?.parse()?;
+        bump_lock(&mut lock, &names, &next)?;
+        fs::write(path, lock.to_string())?;
+    }
+    fs::write("Cargo.toml", manifest.to_string())?;
+    println!(
+        "Workspace version is now {next}; review the manifest and both lockfiles before release."
+    );
+    Ok(())
+}
+fn bump_lock(lock: &mut DocumentMut, names: &[String], next: &str) -> Result<()> {
     for package in lock["package"]
         .as_array_of_tables_mut()
         .ok_or("invalid lockfile")?
         .iter_mut()
     {
-        if !package.contains_key("source") {
-            package["version"] = value(&next);
+        if !package.contains_key("source")
+            && package["name"]
+                .as_str()
+                .is_some_and(|name| names.iter().any(|n| n == name))
+        {
+            package["version"] = value(next);
         }
     }
-    fs::write("Cargo.lock", lock.to_string())?;
-    fs::write("Cargo.toml", manifest.to_string())?;
-    println!("Workspace version is now {next}; review and commit both Cargo files before release.");
     Ok(())
 }
 fn release() -> Result<()> {
@@ -280,7 +338,8 @@ fn release() -> Result<()> {
         return Err("release commit must equal published origin/main".into());
     }
     check()?;
-    deb()?;
+    deb(false)?;
+    deb(true)?;
     let version = version()?;
     let tag = format!("v{version}");
     if !output(
@@ -293,6 +352,8 @@ fn release() -> Result<()> {
     }
     let deb = format!("dist/nulllobby_{version}_amd64.deb");
     let tar = format!("dist/nulllobby_{version}_{TARGET}.tar.gz");
+    let arti_deb = format!("dist/nulllobby-arti-experimental_{version}_amd64.deb");
+    let arti_tar = format!("dist/nulllobby-arti-experimental_{version}_{TARGET}.tar.gz");
     command(
         "gh",
         &[
@@ -302,6 +363,9 @@ fn release() -> Result<()> {
             &deb,
             &tar,
             "dist/SHA256SUMS",
+            &arti_deb,
+            &arti_tar,
+            "dist/SHA256SUMS-arti",
             "--draft",
             "--target",
             &commit,
@@ -317,7 +381,7 @@ fn release() -> Result<()> {
     Ok(())
 }
 
-fn dependency_notices() -> Result<String> {
+fn dependency_notices(arti: bool) -> Result<String> {
     let mut missing = Vec::new();
     let cargo_home = std::env::var_os("CARGO_HOME")
         .map(PathBuf::from)
@@ -326,23 +390,24 @@ fn dependency_notices() -> Result<String> {
     let registries =
         fs::read_dir(cargo_home.join("registry/src"))?.collect::<std::io::Result<Vec<_>>>()?;
     let lock: DocumentMut = fs::read_to_string("Cargo.lock")?.parse()?;
-    let tree = output(
-        "cargo",
-        &[
-            "tree",
-            "--locked",
-            "--target",
-            TARGET,
-            "--package",
-            "nulllobby-tui",
-            "--edges",
-            "normal,build",
-            "--prefix",
-            "none",
-            "--format",
-            "{p}",
-        ],
-    )?;
+    let mut args = vec![
+        "tree",
+        "--locked",
+        "--target",
+        TARGET,
+        "--package",
+        "nulllobby-tui",
+        "--edges",
+        "normal,build",
+        "--prefix",
+        "none",
+        "--format",
+        "{p}",
+    ];
+    if arti {
+        args.extend(["--features", "tor-arti-experimental"]);
+    }
+    let tree = output("cargo", &args)?;
     let included: std::collections::BTreeSet<_> = tree
         .lines()
         .filter_map(|line| {
@@ -357,19 +422,23 @@ fn dependency_notices() -> Result<String> {
         .as_array_of_tables()
         .ok_or("invalid lockfile")?
     {
-        if !package.contains_key("source") {
-            continue;
-        }
         let name = package["name"].as_str().ok_or("missing name")?;
         let version = package["version"].as_str().ok_or("missing version")?;
         if !included.contains(&(name, version)) {
             continue;
         }
-        let source = registries
-            .iter()
-            .map(|registry| registry.path().join(format!("{name}-{version}")))
-            .find(|path| path.is_dir())
-            .ok_or("dependency source unavailable; run cargo fetch --locked")?;
+        if !package.contains_key("source") && name != "tor-hsservice" {
+            continue;
+        }
+        let source = if name == "tor-hsservice" {
+            PathBuf::from("vendor/tor-hsservice")
+        } else {
+            registries
+                .iter()
+                .map(|registry| registry.path().join(format!("{name}-{version}")))
+                .find(|path| path.is_dir())
+                .ok_or("dependency source unavailable; run cargo fetch --locked")?
+        };
         let mut files = fs::read_dir(&source)?.collect::<std::io::Result<Vec<_>>>()?;
         files.sort_by_key(|file| file.file_name());
         let mut found = false;
@@ -389,6 +458,8 @@ fn dependency_notices() -> Result<String> {
             }
             if file.file_type()?.is_file()
                 && (name.starts_with("LICENSE")
+                    || name.starts_with("LICENCE")
+                    || name == "UNLICENSE"
                     || name.starts_with("COPYING")
                     || name.starts_with("NOTICE"))
             {
@@ -398,6 +469,25 @@ fn dependency_notices() -> Result<String> {
             }
         }
         if !found {
+            let metadata: DocumentMut = fs::read_to_string(source.join("Cargo.toml"))?.parse()?;
+            let repository = metadata["package"]["repository"]
+                .as_str()
+                .unwrap_or("")
+                .trim_end_matches('/');
+            let license = metadata["package"]["license"].as_str().unwrap_or("");
+            // Arti crate archives omit the shared root licenses. Preserve the
+            // exact upstream release's umbrella notices for reviewed Arti crates.
+            if repository == "https://gitlab.torproject.org/tpo/core/arti.git"
+                && (license == "MIT OR Apache-2.0" || license == "Apache-2.0 OR MIT")
+            {
+                for file in ["LICENSE-MIT", "LICENSE-APACHE"] {
+                    notices.push_str(&fs::read_to_string(
+                        Path::new("vendor/tor-hsservice").join(file),
+                    )?);
+                    notices.push_str("\n\n");
+                }
+                continue;
+            }
             let reviewed = Path::new("packaging/licenses").join(format!("{name}-{version}.txt"));
             if reviewed.is_file() {
                 notices.push_str(&fs::read_to_string(reviewed)?);
@@ -555,6 +645,15 @@ mod tests {
         ] {
             assert!(next_version(version, level).is_err());
         }
+    }
+    #[test]
+    fn version_bumps_preserve_vendored_and_fuzz_package_versions() {
+        let mut lock: DocumentMut = "[[package]]\nname = 'nulllobby-core'\nversion = '0.2.0'\n[[package]]\nname = 'tor-hsservice'\nversion = '0.47.0'\n[[package]]\nname = 'nulllobby-fuzz'\nversion = '0.0.0'\n".parse().unwrap();
+        bump_lock(&mut lock, &["nulllobby-core".into()], "0.3.0").unwrap();
+        let packages = lock["package"].as_array_of_tables().unwrap();
+        assert_eq!(packages.get(0).unwrap()["version"].as_str(), Some("0.3.0"));
+        assert_eq!(packages.get(1).unwrap()["version"].as_str(), Some("0.47.0"));
+        assert_eq!(packages.get(2).unwrap()["version"].as_str(), Some("0.0.0"));
     }
     #[test]
     fn glibc_versions_sort_numerically() {

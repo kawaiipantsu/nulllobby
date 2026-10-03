@@ -113,11 +113,16 @@ pub enum NetworkAction {
     PeerDns,
     LocalTorControl,
     LocalTorSocks,
+    /// Relay connectivity inside the embedded Tor implementation boundary.
+    EmbeddedTor,
 }
 
 pub trait NetworkObserver: Send + Sync {
     fn before_network_action(&self, action: NetworkAction) -> Result<(), TransportError>;
     fn connection_state(&self, _state: ConnectionState) {}
+    fn bootstrap_progress(&self, _percent: u8) {}
+    /// Local fixed categories only; never include endpoint or credential values.
+    fn transport_diagnostic(&self, _category: &str) {}
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -139,7 +144,9 @@ impl NetworkObserver for ModePolicy {
     fn before_network_action(&self, action: NetworkAction) -> Result<(), TransportError> {
         let tor_local = matches!(
             action,
-            NetworkAction::LocalTorControl | NetworkAction::LocalTorSocks
+            NetworkAction::LocalTorControl
+                | NetworkAction::LocalTorSocks
+                | NetworkAction::EmbeddedTor
         );
         if (self.0 == TransportKind::Tor) == tor_local {
             Ok(())

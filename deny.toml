@@ -4,11 +4,15 @@ all-features = true
 [advisories]
 unmaintained = "all"
 yanked = "deny"
-ignore = []
+ignore = [
+    # Experimental Arti only. Scope and removal conditions: docs/ARTI-DEPENDENCIES.md.
+    { id = "RUSTSEC-2023-0071", reason = "Arti client and v3 service use public RSA verification only; no private RSA operation exposed" },
+    { id = "RUSTSEC-2024-0436", reason = "Arti transitive build-time paste macro; maintenance exception reviewed 2026-10-03" },
+]
 
 [licenses]
 confidence-threshold = 0.93
-allow = ["AGPL-3.0-or-later", "MIT", "Apache-2.0", "BSD-3-Clause", "Unicode-3.0", "BlueOak-1.0.0", "Zlib"]
+allow = ["AGPL-3.0-or-later", "MIT", "Apache-2.0", "BSD-3-Clause", "Unicode-3.0", "BlueOak-1.0.0", "Zlib", "BSD-2-Clause", "ISC", "CC0-1.0", "Unlicense", "MPL-2.0", "BSL-1.0"]
 
 [bans]
 multiple-versions = "warn"

@@ -1,0 +1,5 @@
+[advisories]
+# Reviewed 2026-10-03. Arti client/v3 services only verify public RSA relay
+# signatures. No RSA private operation is exposed. See docs/ARTI-DEPENDENCIES.md.
+# Keep the advisory visible in that review; this is not a fixed upstream crate.
+ignore = ["RUSTSEC-2023-0071"]

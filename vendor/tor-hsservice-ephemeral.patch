@@ -1,0 +1,408 @@
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -40,6 +40,7 @@
+ all-features = true
+ 
+ [features]
++ephemeral-service = ["tor-keymgr/ephemeral-keystore"]
+ __is_experimental = []
+ default = []
+ experimental = [
+--- a/src/ipt_mgr/persist.rs
++++ b/src/ipt_mgr/persist.rs
+@@ -7,7 +7,7 @@
+ use crate::time_store;
+ 
+ /// Handle for a suitable persistent storage manager
+-pub(crate) type IptStorageHandle = tor_persist::state_dir::StorageHandle<StateRecord>;
++pub(crate) type IptStorageHandle = crate::service_storage::Storage<StateRecord>;
+ 
+ //---------- On disk data structures, done with serde ----------
+ 
+--- a/src/ipt_mgr.rs
++++ b/src/ipt_mgr.rs
+@@ -78,7 +78,7 @@
+     ///
+     /// Files are named after the (bare) IptLocalId
+     #[educe(Debug(ignore))]
+-    replay_log_dir: tor_persist::state_dir::InstanceRawSubdir,
++    replay_log_dir: Option<tor_persist::state_dir::InstanceRawSubdir>,
+ 
+     /// A sender for updating the status of the onion service.
+     #[educe(Debug(ignore))]
+@@ -459,8 +459,7 @@
+             started: imm.runtime.now(),
+         };
+ 
+-        // TODO #1186 Support ephemeral services (without persistent replay log)
+-        let replay_log = IptReplayLog::new_logged(&imm.replay_log_dir, &lid)?;
++        let replay_log = IptReplayLog::new_with_storage(imm.replay_log_dir.as_ref(), &lid)?;
+ 
+         let params = IptParameters {
+             replay_log,
+@@ -608,7 +607,7 @@
+         config: watch::Receiver<Arc<OnionServiceConfig>>,
+         output_rend_reqs: mpsc::Sender<RendRequest>,
+         shutdown: broadcast::Receiver<Void>,
+-        state_handle: &tor_persist::state_dir::InstanceStateHandle,
++        state_handle: &crate::service_storage::Instance,
+         mockable: M,
+         keymgr: Arc<KeyMgr>,
+         status_tx: IptMgrStatusSender,
+@@ -1369,7 +1368,10 @@
+ 
+         // fs-mistrust doesn't offer CheckedDir::read_this_directory.
+         // But, we probably don't mind that we're not doing many checks here.
+-        let replay_logs = self.imm.replay_log_dir.as_path();
++        let Some(replay_log_dir) = &self.imm.replay_log_dir else {
++            return Ok(());
++        };
++        let replay_logs = replay_log_dir.as_path();
+         let replay_logs_dir =
+             fs::read_dir(replay_logs).map_err(handle_rl_err("open dir", replay_logs))?;
+ 
+@@ -1942,7 +1944,7 @@
+                 cfg_rx,
+                 rend_tx,
+                 shut_rx,
+-                &state_handle,
++                &crate::service_storage::Instance(Some(state_handle)),
+                 mocks,
+                 keymgr,
+                 status_tx,
+--- a/src/ipt_set.rs
++++ b/src/ipt_set.rs
+@@ -3,7 +3,7 @@
+ use crate::internal_prelude::*;
+ 
+ /// Handle for a suitable persistent storage manager
+-pub(crate) type IptSetStorageHandle = tor_persist::state_dir::StorageHandle<StateRecord>;
++pub(crate) type IptSetStorageHandle = crate::service_storage::Storage<StateRecord>;
+ 
+ /// Information shared between the IPT manager and the IPT publisher
+ ///
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -74,6 +74,7 @@
+ mod publish;
+ mod rend_handshake;
+ mod replay;
++mod service_storage;
+ mod req;
+ pub mod status;
+ mod timeout_track;
+@@ -247,10 +248,24 @@
+     /// The key manager, used for accessing the underlying key stores.
+     keymgr: Arc<KeyMgr>,
+     /// The location on disk where the persistent data is stored.
+-    state_dir: StateDirectory,
++    #[builder(setter(strip_option))]
++    state_dir: Option<StateDirectory>,
+ }
+ 
+ impl OnionService {
++    /// Construct a fresh service whose keys, introduction-point state and replay
++    /// filters live only in RAM. This service cannot be resumed after shutdown.
++    /// The client supplying its circuit pool retains its normal Tor guard state.
++    #[cfg(feature = "ephemeral-service")]
++    pub fn new_ephemeral(config: OnionServiceConfig) -> Result<Self, StartupError> {
++        let store = tor_keymgr::ArtiEphemeralKeystore::new("ephemeral-service".into());
++        let keymgr = tor_keymgr::KeyMgrBuilder::default()
++            .primary_store(Box::new(store))
++            .build()
++            .map_err(|_| internal!("ephemeral keystore construction failed"))?;
++        Ok(Self { config, keymgr: Arc::new(keymgr), state_dir: None })
++    }
++
+     /// Create an [`OnionServiceBuilder`].
+     pub fn builder() -> OnionServiceBuilder {
+         OnionServiceBuilder::default()
+@@ -310,9 +325,10 @@
+             );
+         }
+ 
+-        let state_handle = state_dir
+-            .acquire_instance(&config.nickname)
+-            .map_err(StartupError::StateDirectoryInaccessible)?;
++        let state_handle = service_storage::Instance(state_dir
++            .map(|dir| dir.acquire_instance(&config.nickname))
++            .transpose()
++            .map_err(StartupError::StateDirectoryInaccessible)?);
+ 
+         // We pass the "cooked" handle, with the storage key embedded, to ipt_set,
+         // since the ipt_set code doesn't otherwise have access to the HS nickname.
+@@ -469,6 +485,11 @@
+     /// Build the [`OnionService`]
+     pub fn build(&self) -> Result<OnionService, StartupError> {
+         let svc = self.build_unvalidated()?;
++        // Ephemeral replay filters are safe only with the fresh in-memory keys
++        // installed by new_ephemeral. Never infer ephemeral mode from omission.
++        if svc.state_dir.is_none() {
++            return Err(internal!("persistent onion service requires a state directory").into());
++        }
+         Ok(svc)
+     }
+ }
+@@ -815,7 +836,7 @@
+     ) {
+         let instance = mk_state_instance(state_dir, nick);
+         let iptpub_state_handle = instance.storage_handle("iptpub").unwrap();
+-        (instance, iptpub_state_handle)
++        (instance, iptpub_state_handle.into())
+     }
+ 
+     macro_rules! maybe_generate_hsid {
+--- a/src/pow/v1.rs
++++ b/src/pow/v1.rs
+@@ -34,7 +34,7 @@
+ use tor_netdoc::doc::hsdesc::pow::{PowParams, v1::PowParamsV1};
+ use tor_persist::{
+     hsnickname::HsNickname,
+-    state_dir::{InstanceRawSubdir, StorageHandle},
++    state_dir::InstanceRawSubdir,
+ };
+ use tor_rtcompat::Runtime;
+ use tor_rtcompat::SpawnExt;
+@@ -72,7 +72,7 @@
+     nickname: HsNickname,
+ 
+     /// Directory used to store nonce replay log.
+-    instance_dir: InstanceRawSubdir,
++    instance_dir: Option<InstanceRawSubdir>,
+ 
+     /// Key manager.
+     keymgr: Arc<KeyMgr>,
+@@ -86,7 +86,7 @@
+     runtime: R,
+ 
+     /// Handle for storing state we need to persist to disk.
+-    storage_handle: StorageHandle<PowManagerStateRecord>,
++    storage_handle: crate::service_storage::Storage<PowManagerStateRecord>,
+ 
+     /// Queue to tell the publisher to re-upload a descriptor for a given TP, since we've rotated
+     /// that seed.
+@@ -232,9 +232,9 @@
+     pub(crate) fn new(
+         runtime: R,
+         nickname: HsNickname,
+-        instance_dir: InstanceRawSubdir,
++        instance_dir: Option<InstanceRawSubdir>,
+         keymgr: Arc<KeyMgr>,
+-        storage_handle: StorageHandle<PowManagerStateRecord>,
++        storage_handle: crate::service_storage::Storage<PowManagerStateRecord>,
+         netdir_provider: Arc<dyn NetDirProvider>,
+         status_tx: PowManagerStatusSender,
+         config_rx: postage::watch::Receiver<Arc<OnionServiceConfig>>,
+@@ -266,7 +266,7 @@
+                         continue;
+                     }
+                 };
+-                let replay_log = match PowNonceReplayLog::new_logged(&instance_dir, &seed) {
++                let replay_log = match PowNonceReplayLog::new_with_storage(instance_dir.as_ref(), &seed) {
+                     Ok(replay_log) => replay_log,
+                     Err(err) => {
+                         warn_report!(
+@@ -575,7 +575,7 @@
+ 
+             for (seed, verifier) in new_verifiers {
+                 let replay_log = Mutex::new(
+-                    PowNonceReplayLog::new_logged(&state.instance_dir, &seed)
++                    PowNonceReplayLog::new_with_storage(state.instance_dir.as_ref(), &seed)
+                         .expect("Couldn't make ReplayLog."),
+                 );
+                 state.verifiers.insert(seed.head(), (verifier, replay_log));
+@@ -652,7 +652,7 @@
+                 .ok_or(PowError::MissingKey)?;
+ 
+                 let replay_log =
+-                    Mutex::new(PowNonceReplayLog::new_logged(&state.instance_dir, &seed)?);
++                    Mutex::new(PowNonceReplayLog::new_with_storage(state.instance_dir.as_ref(), &seed)?);
+                 state.verifiers.insert(seed.head(), (verifier, replay_log));
+ 
+                 let record = state.to_record();
+--- a/src/pow/v1_stub.rs
++++ b/src/pow/v1_stub.rs
+@@ -10,7 +10,7 @@
+ use tor_netdir::NetDirProvider;
+ use tor_persist::{
+     hsnickname::HsNickname,
+-    state_dir::{InstanceRawSubdir, StorageHandle},
++    state_dir::InstanceRawSubdir,
+ };
+ use tor_rtcompat::Runtime;
+ 
+@@ -34,9 +34,9 @@
+     pub(crate) fn new(
+         _runtime: R,
+         _nickname: HsNickname,
+-        _instance_dir: InstanceRawSubdir,
++        _instance_dir: Option<InstanceRawSubdir>,
+         _keymgr: Arc<KeyMgr>,
+-        _storage_handle: StorageHandle<PowManagerStateRecord>,
++        _storage_handle: crate::service_storage::Storage<PowManagerStateRecord>,
+         _netdir_provider: Arc<dyn NetDirProvider>,
+         _status_tx: StatusSender,
+         _config_rx: postage::watch::Receiver<Arc<OnionServiceConfig>>,
+--- a/src/publish.rs
++++ b/src/publish.rs
+@@ -504,9 +504,9 @@
+             } = PowManager::new(
+                 runtime.clone(),
+                 nickname.clone(),
+-                pow_nonce_dir,
++                Some(pow_nonce_dir),
+                 keymgr.clone(),
+-                pow_manager_storage_handle,
++                pow_manager_storage_handle.into(),
+                 netdir_provider.clone(),
+                 status_tx.clone().into(),
+                 config_rx.clone(),
+--- a/src/replay.rs
++++ b/src/replay.rs
+@@ -36,6 +36,9 @@
+     ///
+     /// If is is `None`, this RelayLog is ephemeral.
+     file: Option<PersistFile>,
++    /// Ephemeral filters fail closed at a fixed insertion limit; never evict
++    /// entries while their introduction-point key is still usable.
++    ephemeral_remaining: Option<usize>,
+     /// [`PhantomData`] so rustc doesn't complain about the unused type param.
+     ///
+     /// This type represents the type of data that we're storing, as well as the type of the
+@@ -115,12 +118,25 @@
+ const REPLAY_LOG_SUFFIX: &str = ".bin";
+ 
+ impl<T: ReplayLogType> ReplayLog<T> {
++    /// Keep replay protection in RAM for keys that will never be reused across
++    /// process restarts. Persistent services continue to use their replay file.
++    pub(crate) fn new_with_storage(
++        dir: Option<&InstanceRawSubdir>,
++        name: &T::Name,
++    ) -> Result<Self, OpenReplayLogError> {
++        match dir {
++            Some(dir) => Self::new_logged(dir, name),
++            None => Ok(Self::new_ephemeral()),
++        }
++    }
++
+     /// Create a new ReplayLog not backed by any data storage.
+     #[allow(dead_code)] // TODO #1186 Remove once something uses ReplayLog.
+     pub(crate) fn new_ephemeral() -> Self {
+         Self {
+             seen: data::Filter::new(),
+             file: None,
++            ephemeral_remaining: Some(100_000),
+             replay_log_type: PhantomData,
+         }
+     }
+@@ -210,6 +226,7 @@
+         Ok(Self {
+             seen,
+             file: Some(file),
++            ephemeral_remaining: None,
+             replay_log_type: PhantomData,
+         })
+     }
+@@ -234,8 +251,14 @@
+     ///
+     /// Otherwise, return `Ok(())`.
+     pub(crate) fn check_for_replay(&mut self, message: &T::Message) -> Result<(), ReplayError> {
++        if self.ephemeral_remaining == Some(0) {
++            return Err(ReplayError::AlreadySeen);
++        }
+         let h = T::transform_message(message);
+         self.seen.test_and_add(&h)?;
++        if let Some(remaining) = &mut self.ephemeral_remaining {
++            *remaining -= 1;
++        }
+         if let Some(f) = self.file.as_mut() {
+             (|| {
+                 // If write_all fails, it might have written part of the data;
+@@ -393,6 +416,18 @@
+ 
+     type TestReplayLog = ReplayLog<TestReplayLogType>;
+ 
++    #[test]
++    fn ephemeral_limit_never_evicts_replay_history() {
++        let mut log = TestReplayLog::new_ephemeral();
++        assert!(log.file.is_none());
++        log.ephemeral_remaining = Some(2);
++        assert!(log.check_for_replay(&[1; OUTPUT_LEN]).is_ok());
++        assert!(log.check_for_replay(&[1; OUTPUT_LEN]).is_err());
++        assert!(log.check_for_replay(&[2; OUTPUT_LEN]).is_ok());
++        assert!(log.check_for_replay(&[3; OUTPUT_LEN]).is_err());
++        assert!(log.check_for_replay(&[1; OUTPUT_LEN]).is_err());
++    }
++
+     impl ReplayLogType for TestReplayLogType {
+         type Name = IptLocalId;
+         type Message = [u8; OUTPUT_LEN];
+--- a/src/service_storage.rs
++++ b/src/service_storage.rs
+@@ -0,0 +1,55 @@
++//! Per-service persistence policy. Ephemeral services keep their live state in
++//! the existing manager structs and never restore it in another process.
++use serde::{Serialize, de::DeserializeOwned};
++use tor_persist::{slug::TryIntoSlug, state_dir};
++
++/// A filesystem instance, or a fresh service with no persistent state.
++pub(crate) struct Instance(pub(crate) Option<state_dir::InstanceStateHandle>);
++impl Instance {
++    /// Obtain state storage without creating files for an ephemeral service.
++    pub(crate) fn storage_handle<T>(
++        &self,
++        key: &(impl TryIntoSlug + ?Sized),
++    ) -> state_dir::Result<Storage<T>> {
++        Ok(Storage(self.0.as_ref().map(|s| s.storage_handle(key)).transpose()?))
++    }
++    /// Obtain a replay directory only for a persistent service.
++    pub(crate) fn raw_subdir(
++        &self,
++        key: &(impl TryIntoSlug + ?Sized),
++    ) -> state_dir::Result<Option<state_dir::InstanceRawSubdir>> {
++        self.0.as_ref().map(|s| s.raw_subdir(key)).transpose()
++    }
++}
++
++/// Persistence only; authoritative live state remains in the service managers.
++pub(crate) struct Storage<T>(Option<state_dir::StorageHandle<T>>);
++impl<T: Serialize + DeserializeOwned> Storage<T> {
++    /// Ephemeral services always start fresh.
++    pub(crate) fn load(&self) -> state_dir::Result<Option<T>> {
++        self.0.as_ref().map_or(Ok(None), |s| s.load())
++    }
++    /// Skip persistence for an ephemeral service, without discarding live state.
++    pub(crate) fn store(&mut self, value: &T) -> state_dir::Result<()> {
++        self.0.as_mut().map_or(Ok(()), |s| s.store(value))
++    }
++}
++impl<T> From<state_dir::StorageHandle<T>> for Storage<T> {
++    fn from(value: state_dir::StorageHandle<T>) -> Self {
++        Self(Some(value))
++    }
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    #[test]
++    fn ephemeral_storage_has_no_filesystem_handle() {
++        let instance = Instance(None);
++        let mut store = instance.storage_handle::<Vec<u8>>("state").unwrap();
++        assert!(store.0.is_none());
++        store.store(&vec![42; 32]).unwrap();
++        assert!(store.load().unwrap().is_none());
++        assert!(instance.raw_subdir("replays").unwrap().is_none());
++    }
++}
+--- a/src/state_dir.md
++++ b/src/state_dir.md
+@@ -52,7 +52,7 @@
+ 
+ ?
+   3161169      0 -rw-r--r--   1 rustcargo rustcargo        0 Apr 28  2022 .local/share/arti/state.lock
+-	state.lock 
++	state.lock
+ 
+ HS IPT replay log
+ ad-hoc via Path

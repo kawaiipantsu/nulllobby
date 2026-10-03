@@ -2,10 +2,10 @@
 resolver = "3"
 members = ["crates/*", "apps/nulllobby-tui", "xtask"]
 default-members = ["apps/nulllobby-tui"]
-exclude = ["fuzz"]
+exclude = ["fuzz", "vendor/tor-hsservice"]
 
 [workspace.package]
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 rust-version = "1.94"
 publish = false
@@ -29,12 +29,12 @@ x25519-dalek = { version = "3.0.0", default-features = false, features = ["zeroi
 minicbor = { version = "2.3.0", features = ["std"] }
 libc = "0.2.190"
 toml_edit = "0.25.15"
-nulllobby-core = { path = "crates/nulllobby-core", version = "=0.2.0" }
-nulllobby-transport = { path = "crates/nulllobby-transport", version = "=0.2.0" }
-nulllobby-platform = { path = "crates/nulllobby-platform", version = "=0.2.0" }
-nulllobby-direct = { path = "crates/nulllobby-direct", version = "=0.2.0" }
-nulllobby-tor = { path = "crates/nulllobby-tor", version = "=0.2.0" }
-nulllobby-app = { path = "crates/nulllobby-app", version = "=0.2.0" }
+nulllobby-core = { path = "crates/nulllobby-core", version = "=0.3.0" }
+nulllobby-transport = { path = "crates/nulllobby-transport", version = "=0.3.0" }
+nulllobby-platform = { path = "crates/nulllobby-platform", version = "=0.3.0" }
+nulllobby-direct = { path = "crates/nulllobby-direct", version = "=0.3.0" }
+nulllobby-tor = { path = "crates/nulllobby-tor", version = "=0.3.0" }
+nulllobby-app = { path = "crates/nulllobby-app", version = "=0.3.0" }
 
 [workspace.lints.rust]
 unsafe_code = "deny"
@@ -47,3 +47,7 @@ codegen-units = 1
 panic = "abort"
 strip = "symbols"
 overflow-checks = true
+
+[patch.crates-io]
+# Arti 0.47.0, with the reviewed ephemeral service-storage patch in vendor/.
+tor-hsservice = { path = "vendor/tor-hsservice" }

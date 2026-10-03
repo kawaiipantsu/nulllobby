@@ -54,6 +54,8 @@ The external daemon's guard/cache state is ordinary Tor state; preserve it. Null
 
 ## Tests
 
+For the optional embedded backend, build `make build-arti` and follow [Experimental Arti](Arti-Review.md). It requires explicit normal Tor state/cache paths and uses a local RAM-only service-storage patch. External Tor remains the default. Neither backend switches to another transport on failure.
+
 Normal tests use local Rust protocol fixtures and an instrumented network policy. Optional live smoke test:
 
 ```sh

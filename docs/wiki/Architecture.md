@@ -53,7 +53,7 @@ A separate external-Tor control connection owns each lobby worker's services. No
 
 Windows and macOS desktop implementations remain future work. Use Iced and the shared Rust core, with no Electron. Windows starts with `x86_64-pc-windows-msvc`, then optional ARM64; macOS starts with ARM64, then optional x86-64. Add VirtualLock/dump controls and native signing/packaging on Windows, appropriate memory locking and signing/notarization on macOS. Credentials stay outside the repository.
 
-The Arti feature is a reviewed unavailable extension point; see [Arti review](Arti-Review.md). It cannot substitute Direct.
+The opt-in Arti backend implements the same Transport interface with distinct ephemeral services and in-memory service state. Normal Tor guards/cache persist. See [Arti review](Arti-Review.md). It cannot substitute external Tor or Direct on failure.
 
 ## Renaming
 

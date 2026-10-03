@@ -1,6 +1,6 @@
 # Privacy and security choices
 
-This page describes the Linux preview. Direct and external Tor are implemented; embedded Arti and desktop clients remain deferred. No independent professional security audit has yet been completed.
+This page describes the Linux preview. Direct, external Tor and opt-in experimental embedded Arti are implemented; desktop clients remain deferred. No independent professional security audit has yet been completed.
 
 ## Direct
 

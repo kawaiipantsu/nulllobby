@@ -22,10 +22,45 @@ use tokio::{
 
 pub use nulllobby_direct::DirectConfig as DirectOptions;
 pub use nulllobby_tor::TorConfig as TorOptions;
+#[cfg(feature = "tor-arti-experimental")]
+struct ArtiProgress {
+    observer: Arc<dyn NetworkObserver>,
+    events: mpsc::Sender<AppEvent>,
+}
+#[cfg(feature = "tor-arti-experimental")]
+impl NetworkObserver for ArtiProgress {
+    fn before_network_action(
+        &self,
+        action: nulllobby_transport::NetworkAction,
+    ) -> Result<(), nulllobby_transport::TransportError> {
+        self.observer.before_network_action(action)
+    }
+    fn connection_state(&self, state: nulllobby_transport::ConnectionState) {
+        self.observer.connection_state(state);
+    }
+    fn bootstrap_progress(&self, percent: u8) {
+        self.observer.bootstrap_progress(percent);
+        let _ = self.events.try_send(AppEvent::Notice {
+            lobby: None,
+            text: format!("EXPERIMENTAL ARTI / BOOTSTRAP {percent}% / NO DIRECT FALLBACK"),
+        });
+    }
+    fn transport_diagnostic(&self, category: &str) {
+        self.observer.transport_diagnostic(category);
+        let _ = self.events.try_send(AppEvent::Notice {
+            lobby: None,
+            text: category.into(),
+        });
+    }
+}
+#[cfg(feature = "tor-arti-experimental")]
+pub use nulllobby_tor::arti::ArtiConfig as ArtiOptions;
 #[derive(Clone)]
 pub struct Config {
     pub direct: DirectConfig,
     pub tor: TorConfig,
+    #[cfg(feature = "tor-arti-experimental")]
+    pub arti: Option<ArtiOptions>,
     pub no_dht: bool,
     pub peers: Vec<Endpoint>,
     pub mode: TransportKind,
@@ -35,6 +70,8 @@ impl Default for Config {
         Self {
             direct: DirectConfig::default(),
             tor: TorConfig::default(),
+            #[cfg(feature = "tor-arti-experimental")]
+            arti: None,
             no_dht: false,
             peers: vec![],
             mode: TransportKind::Direct,
@@ -51,6 +88,8 @@ enum Pending {
     Join(LobbyCard),
 }
 pub struct App {
+    #[cfg(feature = "tor-arti-experimental")]
+    arti: Option<Arc<nulllobby_tor::arti::ArtiPool>>,
     config: Config,
     observer: Option<Arc<dyn NetworkObserver>>,
     commands: mpsc::Receiver<AppCommand>,
@@ -74,6 +113,11 @@ impl App {
     ) -> Self {
         let (room_tx, room_rx) = mpsc::channel(128);
         Self {
+            #[cfg(feature = "tor-arti-experimental")]
+            arti: config
+                .arti
+                .clone()
+                .map(|config| Arc::new(nulllobby_tor::arti::ArtiPool::new(config))),
             config,
             observer: None,
             commands,
@@ -159,19 +203,45 @@ impl App {
                 )
                 .with_pending(self.pending_handshakes.clone()),
             ),
-            TransportKind::Tor => Box::new(TorTransport::new(
-                self.config.tor.clone(),
-                observer.clone(),
-                self.global.clone(),
-                self.pending_handshakes.clone(),
-            )),
+            TransportKind::Tor => {
+                #[cfg(feature = "tor-arti-experimental")]
+                if let Some(pool) = &self.arti {
+                    Box::new(nulllobby_tor::arti::ArtiTransport::new(
+                        pool.clone(),
+                        Arc::new(ArtiProgress {
+                            observer: observer.clone(),
+                            events: self.events.clone(),
+                        }),
+                        self.global.clone(),
+                        self.pending_handshakes.clone(),
+                    ))
+                } else {
+                    Box::new(TorTransport::new(
+                        self.config.tor.clone(),
+                        observer.clone(),
+                        self.global.clone(),
+                        self.pending_handshakes.clone(),
+                    ))
+                }
+                #[cfg(not(feature = "tor-arti-experimental"))]
+                Box::new(TorTransport::new(
+                    self.config.tor.clone(),
+                    observer.clone(),
+                    self.global.clone(),
+                    self.pending_handshakes.clone(),
+                ))
+            }
         };
         self.notice(match self.config.mode {
             TransportKind::Direct => "DIRECT / ENCRYPTED SESSIONS REQUIRED / IP EXPOSED TO PEERS",
             TransportKind::Tor => "TOR / BOOTSTRAPPING / NO DIRECT FALLBACK",
         })
         .await;
-        transport.start().await.map_err(|_| "Transport unavailable; Tor requires a bootstrapped daemon, SAFECOOKIE cookie path and local SOCKS/Control ports")?;
+        #[cfg(feature = "tor-arti-experimental")]
+        if self.config.mode == TransportKind::Tor && self.arti.is_some() {
+            self.notice("EXPERIMENTAL ARTI / ONION TRANSPORT / RAM-only lobby services; normal Tor guards/cache persist").await;
+        }
+        transport.start().await.map_err(|_| "Transport unavailable; check the selected backend configuration and /network. No fallback was attempted.")?;
         let (card, local) = if self.config.mode == TransportKind::Tor && card.is_none() {
             let local = transport
                 .create_endpoint([0; 32])
@@ -281,7 +351,17 @@ impl App {
                 }
             }
             Inspection::Security | Inspection::Network | Inspection::Privacy => {
-                self.notice(match self.config.mode { TransportKind::Direct => "DIRECT / IP EXPOSED TO PEERS. DHT observers can correlate IPs and swarm identifiers. BitTorrent and NL_chat may be identifiable. Direct is not anonymous.", TransportKind::Tor => "TOR / ONION TRANSPORT. Peer IPs are hidden by onion transport. Tor use may be observable locally; sufficiently powerful observers may correlate traffic. No exit peers, DHT or Direct fallback. SOCKS isolation is requested per lobby; configure IsolateSOCKSAuth explicitly." }).await;
+                self.notice(match self.config.mode { TransportKind::Direct => "DIRECT / IP EXPOSED TO PEERS. DHT observers can correlate IPs and swarm identifiers. BitTorrent and NL_chat may be identifiable. Direct is not anonymous.", TransportKind::Tor => "TOR / ONION TRANSPORT. Peer IPs are hidden by onion transport. Tor use may be observable locally; sufficiently powerful observers may correlate traffic. No exit peers, DHT or Direct fallback." }).await;
+                if self.config.mode == TransportKind::Tor {
+                    #[cfg(feature = "tor-arti-experimental")]
+                    if self.arti.is_some() {
+                        self.notice("Backend: EXPERIMENTAL ARTI 0.47.0; isolated client per lobby. Lobby service keys/state/replay filters stay in RAM. Normal Tor guards/cache persist; shared relay maintenance may continue until process exit.").await;
+                    } else {
+                        self.notice("Backend: external Tor. SOCKS isolation is requested per lobby; configure IsolateSOCKSAuth explicitly.").await;
+                    }
+                    #[cfg(not(feature = "tor-arti-experimental"))]
+                    self.notice("Backend: external Tor. SOCKS isolation is requested per lobby; configure IsolateSOCKSAuth explicitly.").await;
+                }
                 self.notice("History, identities and trust: RAM only. No professional security audit completed. Authorized lobby recipients can read messages. Terminal scrollback, kernel compromise and physical memory are outside this boundary.").await;
                 if let Some(room) = room {
                     self.notice(format!(

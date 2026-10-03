@@ -476,7 +476,7 @@ dependencies = [
 
 [[package]]
 name = "nulllobby-core"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "base64",
  "ed25519-dalek",
@@ -497,7 +497,7 @@ dependencies = [
 
 [[package]]
 name = "nulllobby-direct"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "bendy",
  "getrandom 0.4.3",
@@ -521,7 +521,7 @@ dependencies = [
 
 [[package]]
 name = "nulllobby-platform"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "libc",
  "secrecy",
@@ -530,7 +530,7 @@ dependencies = [
 
 [[package]]
 name = "nulllobby-tor"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "data-encoding",
  "getrandom 0.4.3",
@@ -545,7 +545,7 @@ dependencies = [
 
 [[package]]
 name = "nulllobby-transport"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "thiserror",
  "tokio",
@@ -951,3 +951,7 @@ name = "zeroize"
 version = "1.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e13c156562582aa81c60cb29407084cdb54c4164760106ab78e6c5b0858cf64e"
+
+[[patch.unused]]
+name = "tor-hsservice"
+version = "0.47.0"

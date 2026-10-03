@@ -5,11 +5,13 @@ use std::{fs, process::Command};
 fn bump_updates_workspace_internal_requirements_and_lockfile_only() {
     let path = std::env::temp_dir().join(format!("nulllobby-version-test-{}", std::process::id()));
     fs::create_dir(&path).unwrap();
+    fs::create_dir(path.join("fuzz")).unwrap();
     let manifest = "[workspace.package]\nversion = '1.2.3'\n[workspace.dependencies]\nlocal = { path = 'local', version = '=1.2.3' }\nexternal = '4.5.6'\n";
     let lock = "version = 4\n[[package]]\nname = 'local'\nversion = '1.2.3'\n[[package]]\nname = 'external'\nversion = '4.5.6'\nsource = 'registry+https://github.com/rust-lang/crates.io-index'\n";
     for (level, expected) in [("major", "2.0.0"), ("minor", "1.3.0"), ("patch", "1.2.4")] {
         fs::write(path.join("Cargo.toml"), manifest).unwrap();
         fs::write(path.join("Cargo.lock"), lock).unwrap();
+        fs::write(path.join("fuzz/Cargo.lock"), lock).unwrap();
         let output = Command::new(env!("CARGO_BIN_EXE_xtask"))
             .args(["bump", level])
             .current_dir(&path)
@@ -39,6 +41,10 @@ fn bump_updates_workspace_internal_requirements_and_lockfile_only() {
         let packages = actual["package"].as_array_of_tables().unwrap();
         assert_eq!(packages.get(0).unwrap()["version"].as_str(), Some(expected));
         assert_eq!(packages.get(1).unwrap()["version"].as_str(), Some("4.5.6"));
+        assert_eq!(
+            fs::read_to_string(path.join("Cargo.lock")).unwrap(),
+            fs::read_to_string(path.join("fuzz/Cargo.lock")).unwrap()
+        );
     }
     fs::remove_dir_all(path).unwrap();
 }

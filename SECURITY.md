@@ -2,7 +2,7 @@
 
 ## Implementation boundary
 
-The Linux preview implements encrypted Direct and external Tor transports, signed lobby gossip and a terminal client. Unit, integration and live smoke tests cover the listed properties, with explicit limits below. No independent professional security audit has yet been completed.
+The Linux preview implements encrypted Direct and external Tor transports, signed lobby gossip and a terminal client. An optional experimental embedded Arti backend uses a reviewed local service-storage patch. Unit, integration and live smoke tests cover the listed properties, with explicit limits below. No independent professional security audit has yet been completed.
 
 Assume attackers possess every executable, source file and protocol specification. Security must depend on standard cryptography and protected keys, consistent with Kerckhoffs's principle. Native compilation, LTO and symbol stripping are not cryptographic controls.
 
@@ -71,7 +71,7 @@ Each high-value secret gets its own private anonymous mapping. `mlock` success o
 
 Dalek enables zeroization; SHA-256/HMAC buffers enable available zeroization features. The retained HKDF PRK is explicitly cleared. Not all internal dependency temporaries are guaranteed to be erased. In particular, snow 0.10.0's internal handshake and cipher state does not expose complete zeroization or locking controls; retained session state is not covered by the seed/PSK memory-lock indicator. Temporary signing keys, KDF internals and card encoding buffers are **not all mlocked**. Compiler temporaries, CPU registers, kernel buffers, swap behavior, terminal scrollback, clipboard managers, hypervisors, compromised kernels and physical acquisition cannot be absolutely controlled by ordinary Rust code. Abort/OOM termination does not run Rust destructors.
 
-No chat history, invites, keys, fingerprints, trust, nickname/config, routing state, onion keys or endpoint history is intentionally written to disk. Build artifacts and release tools are developer filesystem operations, separate from application runtime. No telemetry, crash uploader, database or analytics exists.
+No chat history, invites, application keys, fingerprints, trust, nickname/config, DHT routing state, onion keys or endpoint history is intentionally written to disk. Build artifacts and release tools are developer filesystem operations, separate from application runtime. No telemetry, crash uploader, chat database or analytics exists. Embedded Arti retains ordinary Tor guard state and a SQLite directory cache in explicitly configured paths; application and onion-service secrets never enter that cache.
 
 ## Implemented protocol properties
 
@@ -97,11 +97,12 @@ No chat history, invites, keys, fingerprints, trust, nickname/config, routing st
 - Automatic NAT traversal, delivery acknowledgements and durable offline delivery are absent. Network partitions and bounded queues can lose messages; the UI does not promise delivery to every member.
 - DHT and authorized peers can deny availability or attempt eclipse attacks. Public lobbies admit anyone holding the public card. Private capability compromise requires starting a fresh private lobby and redistributing its card; key rotation/revocation is not implemented.
 - Onion publication can take time. A dead card seed cannot be recovered by global lookup. Tor control health is checked every 15 seconds with a five-second command timeout; failure closes streams and the lobby worker then reports disconnection.
-- The experimental Arti feature is an unavailable extension point pending per-service storage review, not an embedded Tor implementation. Desktop clients are future work.
+- The optional experimental Arti backend pins libraries 0.47.0 and patches service storage to use independent RAM-only keystores and replay filters. Normal Tor guard/cache state remains durable. Service status is checked every five seconds; failures close streams without changing backend. The shared Tor client may maintain relay connections until process exit. Replay filters fail closed at 100,000 insertions per live filter. Memory accounting covers selected Tor queues, not total RSS. See the [implementation review](docs/wiki/Arti-Review.md).
+- The optional Arti graph has documented RSA applicability and unmaintained-dependency exceptions. These are not repaired upstream vulnerabilities or a vulnerability-free audit result. See the [dependency assessment](docs/ARTI-DEPENDENCIES.md). Desktop clients remain future work.
 
 ## State and privacy distinctions
 
-External Tor can retain normal guard/cache state. Do not delete or rotate it to satisfy NullLobby's RAM-only rule. NullLobby-specific onion keys must be ephemeral and application secrets must never enter Tor state files. Ordinary Tor use may be observable without bridges/pluggable transports. Bridges are not a guarantee of invisibility.
+External Tor and embedded Arti retain normal guard/cache state. Do not delete or rotate it to satisfy NullLobby's RAM-only rule. NullLobby-specific onion keys must be ephemeral and application secrets must never enter Tor state files. Ordinary Tor use may be observable without bridges/pluggable transports. Bridges are not a guarantee of invisibility.
 
 An OS VPN is not a NullLobby transport. Correct routing usually exposes its egress to Direct peers; the operator becomes part of the trust model. Split routing or failure can expose direct connectivity. Users relying on the VPN need its kill switch. NullLobby cannot guarantee VPN behavior, equate it with onion mode, or probe public IP-reporting services automatically.
 

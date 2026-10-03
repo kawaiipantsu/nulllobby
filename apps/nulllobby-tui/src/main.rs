@@ -34,6 +34,9 @@ fn run(hardening: HardeningStatus) -> Result<(), &'static str> {
     }
     let mut config = Config::default();
     let mut diagnostic = None;
+    let mut tor_backend = "external";
+    let mut arti_state = None;
+    let mut arti_cache = None;
     let mut args = args.iter();
     while let Some(arg) = args.next() {
         let option = arg.to_str().ok_or("Invalid option; use --help")?;
@@ -65,6 +68,25 @@ fn run(hardening: HardeningStatus) -> Result<(), &'static str> {
                 });
             }
             "--no-dht" => config.no_dht = true,
+            "--tor-backend" => {
+                tor_backend = match args.next().and_then(|s| s.to_str()) {
+                    Some("external") => "external",
+                    Some("arti") => "arti",
+                    _ => return Err("--tor-backend requires external or arti"),
+                };
+            }
+            "--arti-state" => {
+                arti_state = Some(std::path::PathBuf::from(
+                    args.next()
+                        .ok_or("--arti-state requires an absolute path")?,
+                ))
+            }
+            "--arti-cache" => {
+                arti_cache = Some(std::path::PathBuf::from(
+                    args.next()
+                        .ok_or("--arti-cache requires an absolute path")?,
+                ))
+            }
             "--tor-socks" => {
                 config.tor.socks = args
                     .next()
@@ -96,10 +118,38 @@ fn run(hardening: HardeningStatus) -> Result<(), &'static str> {
             _ => return Err("Unsupported option; use --help. Argument values are not logged."),
         }
     }
+    if tor_backend == "arti" {
+        if config.mode != TransportKind::Tor {
+            return Err("--tor-backend arti requires --transport tor");
+        }
+        if config.tor.cookie.is_some() {
+            return Err("Choose one Tor backend; Arti does not use a control cookie");
+        }
+        #[cfg(feature = "tor-arti-experimental")]
+        {
+            let state_dir =
+                arti_state.ok_or("Arti requires --arti-state for durable Tor guard state")?;
+            let cache_dir =
+                arti_cache.ok_or("Arti requires --arti-cache for the Tor directory cache")?;
+            if !state_dir.is_absolute() || !cache_dir.is_absolute() || state_dir == cache_dir {
+                return Err("Arti requires distinct absolute state and cache paths");
+            }
+            config.arti = Some(nulllobby_app::ArtiOptions {
+                state_dir,
+                cache_dir,
+            });
+        }
+        #[cfg(not(feature = "tor-arti-experimental"))]
+        return Err(
+            "Embedded Arti is unavailable in this build; explicitly build with tor-arti-experimental. No backend fallback.",
+        );
+    } else if arti_state.is_some() || arti_cache.is_some() {
+        return Err("Arti directory options require --tor-backend arti");
+    }
     if let Some(option) = diagnostic {
         match option {
             "--help" | "-h" => println!(
-                "{} {}\n\nRun without options for the terminal client.\n--transport direct|tor\n--listen IP:PORT          Direct listener (default random port)\n--peer IP:PORT            Explicit Direct peer (up to 8)\n--no-dht                  Direct localhost/developer mode\n--tor-socks 127.0.0.1:9050\n--tor-control 127.0.0.1:9051\n--tor-cookie PATH         Explicit SAFECOOKIE authentication file\n--help --version --about --security --self-check\n\nDirect exposes peer IPs. Tor never falls back to Direct. Application state is RAM only.",
+                "{} {}\n\nRun without options for the terminal client.\n--transport direct|tor\n--listen IP:PORT          Direct listener (default random port)\n--peer IP:PORT            Explicit Direct peer (up to 8)\n--no-dht                  Direct localhost/developer mode\n--tor-socks 127.0.0.1:9050\n--tor-control 127.0.0.1:9051\n--tor-cookie PATH         Explicit SAFECOOKIE authentication file\n--tor-backend external|arti (Arti requires experimental build)\n--arti-state PATH         Durable Tor guard state (absolute)\n--arti-cache PATH         Tor directory cache (absolute)\n--help --version --about --security --self-check\n\nDirect exposes peer IPs. Tor never falls back to Direct. Application state is RAM only.",
                 branding::PROJECT,
                 env!("CARGO_PKG_VERSION")
             ),

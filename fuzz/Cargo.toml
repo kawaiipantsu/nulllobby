@@ -6,6 +6,8 @@ edition = "2024"
 license = "AGPL-3.0-or-later"
 [package.metadata]
 cargo-fuzz = true
+[patch.crates-io]
+tor-hsservice = { path = "../vendor/tor-hsservice" }
 [dependencies]
 libfuzzer-sys = "0.4.13"
 nulllobby-core = { path = "../crates/nulllobby-core" }
