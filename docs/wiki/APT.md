@@ -7,7 +7,7 @@ NullLobby Debian packages are published in the public [THUGS(red) APT repository
 | `nulllobby` | External/system Tor; recommended default |
 | `nulllobby-arti-experimental` | External Tor plus experimental embedded Arti |
 
-Choose one variant; both install `/usr/bin/nulllobby` and conflict with each other. These packages require glibc 2.39 or newer. Debian 13 and Ubuntu 24.04 meet that requirement; Debian 12 does not. The repository also supports arm64, but NullLobby has no arm64 release package yet. No independent professional security audit has been completed.
+Choose one variant; both install `/usr/bin/nulllobby` and conflict with each other. Starting with 0.5.1, both variants target Debian 12 and newer with `libc6 (>= 2.36)`, using a pinned Debian 12 builder and an ELF compatibility check. Earlier releases, including 0.5.0, require glibc 2.39. There is no need to upgrade or replace Debian 12's system libc. The repository also supports arm64, but NullLobby has no arm64 release package yet. No independent professional security audit has been completed.
 
 **Upgrading from 0.4.x:** upgrade every lobby participant and distribute fresh v2 invitation cards. Older cards and peers are rejected. Identity persistence, durable delivery and peer mailboxes remain separate opt-in choices; installing the package enables none of them.
 

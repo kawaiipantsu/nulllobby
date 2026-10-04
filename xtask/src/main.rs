@@ -3,6 +3,7 @@
 #![forbid(unsafe_code)]
 
 mod apt;
+mod bookworm;
 mod signing;
 
 use sha2::{Digest, Sha256};
@@ -36,8 +37,10 @@ fn run() -> Result<()> {
     {
         ["build"] => build(false),
         ["build-arti"] => build(true),
-        ["deb"] => deb(false),
-        ["deb-arti"] => deb(true),
+        ["deb"] => bookworm::package(false),
+        ["deb-arti"] => bookworm::package(true),
+        ["deb-native"] => deb(false),
+        ["deb-arti-native"] => deb(true),
         ["check"] => check(),
         ["fuzz-smoke"] => fuzz_smoke(),
         ["screenshots"] => screenshots(),
@@ -179,6 +182,7 @@ fn build(arti: bool) -> Result<()> {
     Ok(())
 }
 fn deb(arti: bool) -> Result<()> {
+    bookworm::require_baseline()?;
     if output("dpkg", &["--print-architecture"])? != "amd64" {
         return Err("Debian packaging requires an amd64 Linux builder".into());
     }
@@ -231,7 +235,10 @@ fn deb(arti: bool) -> Result<()> {
     )?;
     // Derive glibc minimum from ELF version requirements on the actual built binary.
     let elf = output("readelf", &["--version-info", &binary])?;
-    let minimum = glibc_requirement(&elf)?;
+    bookworm::validate_elf(&elf)?;
+    // Keep the declared minimum at the oldest tested userspace, even when the
+    // executable happens to reference only older symbol versions.
+    let minimum = "2.36";
     let package = if arti {
         "nulllobby-arti-experimental"
     } else {
@@ -407,8 +414,8 @@ fn release(signed: bool) -> Result<()> {
         signing::preflight()?;
     }
     check()?;
-    deb(false)?;
-    deb(true)?;
+    bookworm::package(false)?;
+    bookworm::package(true)?;
     if signed {
         signing::run("sign-release")?;
     }

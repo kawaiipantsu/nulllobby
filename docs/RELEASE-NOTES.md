@@ -1,43 +1,27 @@
-# NullLobby 0.5.0 — Linux preview
+# NullLobby 0.5.1 — Debian 12 support
 
-## Team privacy and delivery
+Both Linux amd64 package variants now target **Debian 12 and newer, with `libc6 (>= 2.36)`**. The binaries and Linux archives are compiled inside a digest-pinned Rust 1.94.1 / Debian 12 environment. Packaging checks ELF symbol requirements and refuses any dependency on a newer glibc, including weak symbol requirements.
 
-- Private-lobby administrators can rotate capabilities and exclude a full lobby fingerprint from individually encrypted replacement offers to verified retained peers. New capabilities, identities and endpoints replace the old local lobby; offline/indirect participants need a fresh invite.
-- Optional encrypted vaults save independently selected lobby identities and cards. Restoring an identity creates a fresh Noise static key; Tor services remain ephemeral. Human verification stays in RAM.
-- Separately enabled durable sender outboxes and peer mailboxes retain signed durable records for at most 24 hours. Live messages are never intentionally stored. Received/stored receipts, bounded retry/replay and persisted duplicate suppression distinguish delivery states without claiming every member received or read a message.
-- Optional offline organization credentials bind a dedicated issuer to a lobby/key, coarse group/role and short validity. They are separate from human trust, private admission and release signing. No CA lookup or live XXC enrollment is performed.
-- The TUI shows storage, durable messages, delivery state and organization labels. Bots ignore durable/replayed prompts. Invitation copying/redaction supports v2 cards.
+This changes the actual build baseline. There is no system libc downgrade or bundled replacement libc. Published 0.5.0 artifacts remain unchanged.
 
-## Upgrade boundary
+## Install or upgrade
 
-**Protocol and lobby-card v2 are mandatory.** Upgrade all participants and distribute fresh cards. Old peers/cards are rejected; there is no crypto or transport downgrade. Old public bookmarks cannot silently migrate; remove/recreate them with v2 cards. Defaults remain ephemeral and RAM-only; opening a vault saves no lobby automatically.
-
-Vault use requires `libsecret-tools` and an unlocked, properly protected Linux Secret Service. Packages only suggest these optional dependencies. `/identity persistent`, `/delivery durable` and `/mailbox on` are distinct per-lobby choices. See [storage and delivery](https://github.com/kawaiipantsu/nulllobby/wiki/Storage-and-Delivery), [private rotation](https://github.com/kawaiipantsu/nulllobby/wiki/Private-Lobbies) and [organization membership](https://github.com/kawaiipantsu/nulllobby/wiki/Organization).
-
-## Build and distribution
-
-Standard Linux amd64 packages support Direct and external Tor. The separate experimental Arti package adds embedded Tor; choose one package. Neither installs a service, creates a vault or changes Tor configuration. Both variants are published with signed checksum manifests on GitHub and in the official APT repository, suite `zerotrust`.
-
-For systems with the [APT repository configured](https://github.com/kawaiipantsu/nulllobby/wiki/APT):
+With the [official APT repository configured](https://github.com/kawaiipantsu/nulllobby/wiki/APT):
 
 ```sh
 sudo apt update
 sudo apt install nulllobby
 nulllobby --version
+nulllobby --self-check
 ```
 
-To build locally:
+The suite is `zerotrust`, component `main`, architecture `amd64`. Choose `nulllobby-arti-experimental` only to evaluate embedded Arti; the variants conflict because both install the same executable. Optional encrypted vaults need `libsecret-tools` and a protected, unlocked Secret Service. Installing the package does not enable persistence or install a service.
 
-```sh
-make check
-make deb
-make deb-arti
-```
+## Compatibility and build checks
 
-Verify signed checksum manifests against the independently trusted public key before installing a downloaded `.deb`. APT repository signatures use a separate scoped archive key. See [Release Signing](https://github.com/kawaiipantsu/nulllobby/wiki/Release-Signing) and [APT](https://github.com/kawaiipantsu/nulllobby/wiki/APT).
+- The application protocol, v2 invitation cards and encryption suites are unchanged from 0.5.0. Existing 0.5.0 participants can communicate with 0.5.1.
+- Upgrading from 0.4.x still requires upgrading all participants and exchanging fresh v2 cards.
+- `make deb`, `make deb-arti` and signed release builds use the Debian 12 container; Docker access is required for packaging, with no host-build fallback.
+- CI runs workspace checks and installs both package variants in Debian 12 userspace. The ELF guard also rejects glibc 2.39 weak requirements that appeared in the older build.
 
-## Security limits
-
-Direct exposes peer IPs. Tor hides peer IPs through onion transport and never falls back to Direct; traffic correlation remains possible. Mailboxes are authorized plaintext recipients and can lie about retention. Availability requires a reachable holder/seed. Rotation cannot erase old messages/forks or stop a retained member leaking a new card. Old vault backups can roll sequence/retirement state back; recreate affected identities before reuse.
-
-Organization-only admission, online issuer enrollment/revocation, administrator recovery, NAT traversal and Windows/macOS clients remain future work. Embedded Arti and its local patch remain experimental. Existing documented RustSec applicability/maintenance exceptions remain; no independent professional security audit has been completed.
+Direct exposes peer IPs. Tor onion transport never falls back to Direct; traffic correlation remains possible. Embedded Arti remains experimental, and existing documented dependency exceptions remain. No independent professional security audit has been completed.

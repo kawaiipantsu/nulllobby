@@ -34,11 +34,11 @@ sudo apt install nulllobby
 nulllobby
 ```
 
-Packages require glibc 2.39 or newer. The separate `nulllobby-arti-experimental` package includes experimental embedded Tor; choose one variant.
+Starting with 0.5.1, packages support **Debian 12 and newer (glibc 2.36+)**. The separate `nulllobby-arti-experimental` package includes experimental embedded Tor; choose one variant. Earlier published packages require glibc 2.39.
 
 ## Build and run
 
-Requires Linux, Rust 1.94+, a C linker and Make. Packaging also needs `dpkg-deb`, `readelf` and GNU `tar`.
+Requires Linux, Rust 1.94+, a C linker and Make. Packaging also requires Docker access: `make deb` and `make deb-arti` build inside a pinned Rust 1.94.1 / Debian 12 image, independently of the host's glibc. Installing a released package requires neither Rust nor Docker.
 
 ```sh
 make build
@@ -177,7 +177,7 @@ cargo build --locked --release --target x86_64-unknown-linux-gnu -p nulllobby-tu
 cargo test --locked --workspace
 ```
 
-`make build` additionally removes local source/cache paths from compiled artifacts. Debian packages include the binary, security documentation and dependency license notices. They install no service, state directory, Tor configuration or secrets. The glibc requirement comes from the actual binary; build on the oldest distribution you intend to support. Publishing a reviewed draft triggers an Announcements Discussion.
+`make build` additionally removes local source/cache paths from compiled artifacts. It builds for the host's libraries. Debian packages and release archives instead use the pinned Debian 12 builder. Packaging checks actual ELF requirements and rejects any glibc symbol newer than 2.36, including weak requirements. Package metadata declares the tested baseline `libc6 (>= 2.36)`. Packages include the binary, security documentation and dependency license notices; they install no service, state directory, Tor configuration or secrets. Publishing a reviewed draft triggers an Announcements Discussion.
 
 Release signing uses a dedicated Ed25519 OpenPGP key in [XXC Trust](https://ca.xxc.dk/developers). It signs both SHA-256 checksum manifests; GnuPG verifies every returned signature against the pinned public key before upload. Maintainer credentials stay outside the repository and packages. Install `gnupg` for verification and signing tests. `make verify-release` checks downloaded artifacts offline. See [release signing and trust setup](docs/wiki/Release-Signing.md). `make release` also requires signing; `make release-unsigned` is the explicit unsigned draft workflow.
 

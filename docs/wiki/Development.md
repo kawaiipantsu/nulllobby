@@ -16,7 +16,7 @@ cargo audit
 cargo deny check
 ```
 
-`make check` runs these through Rust xtask. CI also builds the Debian package and runs offline diagnostics with an unwritable HOME. A runtime integration test runs three Direct clients with HOME pointing at `/proc`.
+`make check` runs the workspace gates through Rust xtask; the patched upstream test is a separate CI step. CI uses pinned Rust 1.94.1 and Debian 12 userspace, installs both Debian package variants, and runs offline diagnostics with an unwritable HOME. Packaging rejects ELF requirements above glibc 2.36. A runtime integration test runs three Direct clients with HOME pointing at `/proc`.
 
 Integration tests use actual localhost TCP for BitTorrent/BEP 10/Noise/proof, signed gossip and scoped trust. Captured bytes must contain neither chat plaintext nor identity public keys. Tor tests emulate supported local control/SOCKS protocols with SAFECOOKIE verification, distinct service endpoints, isolation values and service cleanup. Network instrumentation rejects Direct/DHT/DNS operations under Tor. Wrong PSKs and proof/key/transcript mismatches never produce a usable session.
 

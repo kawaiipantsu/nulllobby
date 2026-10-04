@@ -9,6 +9,8 @@ permissions:
 jobs:
   linux:
     runs-on: ubuntu-24.04
+    container:
+      image: rust:1.94.1-bookworm@sha256:6ae102bdbf528294bc79ad6e1fae682f6f7c2a6e6621506ba959f9685b308a55
     env:
       CARGO_PROFILE_DEV_DEBUG: '0'
       CARGO_PROFILE_TEST_DEBUG: '0'
@@ -22,7 +24,7 @@ jobs:
           toolchain: '1.94.1'
           components: rustfmt, clippy
       - name: Install native build dependencies
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libsqlite3-dev pkg-config gnupg dbus libsecret-tools gnome-keyring
+        run: apt-get update && apt-get install -y --no-install-recommends libsqlite3-dev pkg-config gnupg dbus libsecret-tools gnome-keyring
       - name: Install Rust security tools
         run: |
           cargo install cargo-audit --version 0.22.2 --locked --no-default-features
@@ -39,12 +41,18 @@ jobs:
           CARGO_TARGET_DIR: ${{ github.workspace }}/target
       - run: cargo audit
       - run: cargo deny check
-      - run: make deb
-      - name: Offline CLI with unwritable HOME
-        run: env HOME=/proc target/x86_64-unknown-linux-gnu/release/nulllobby --self-check
-      - run: make deb-arti
-      - name: Experimental binary offline diagnostics
-        run: env HOME=/proc target/x86_64-unknown-linux-gnu/release/nulllobby --self-check
+      - run: cargo xtask deb-native
+      - name: Install standard package on Debian 12 and test with unwritable HOME
+        run: |
+          apt-get install -y --no-install-recommends ./dist/nulllobby_[0-9]*_amd64.deb
+          nulllobby --version
+          env HOME=/proc /usr/bin/nulllobby --self-check
+      - run: cargo xtask deb-arti-native
+      - name: Install experimental package on Debian 12 and test offline
+        run: |
+          apt-get install -y --no-install-recommends ./dist/nulllobby-arti-experimental_[0-9]*_amd64.deb
+          nulllobby --version
+          env HOME=/proc /usr/bin/nulllobby --self-check
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: nulllobby-linux

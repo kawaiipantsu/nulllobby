@@ -5,7 +5,7 @@ default-members = ["apps/nulllobby-tui"]
 exclude = ["fuzz", "vendor/tor-hsservice"]
 
 [workspace.package]
-version = "0.5.0"
+version = "0.5.1"
 edition = "2024"
 rust-version = "1.94"
 publish = false
@@ -29,14 +29,14 @@ x25519-dalek = { version = "3.0.0", default-features = false, features = ["zeroi
 minicbor = { version = "2.3.0", features = ["std"] }
 libc = "0.2.190"
 toml_edit = "0.25.15"
-nulllobby-core = { path = "crates/nulllobby-core", version = "=0.5.0" }
-nulllobby-transport = { path = "crates/nulllobby-transport", version = "=0.5.0" }
-nulllobby-platform = { path = "crates/nulllobby-platform", version = "=0.5.0" }
-nulllobby-direct = { path = "crates/nulllobby-direct", version = "=0.5.0" }
-nulllobby-tor = { path = "crates/nulllobby-tor", version = "=0.5.0" }
-nulllobby-app = { path = "crates/nulllobby-app", version = "=0.5.0" }
-nulllobby-bot = { path = "crates/nulllobby-bot", version = "=0.5.0" }
-nulllobby-store = { path = "crates/nulllobby-store", version = "=0.5.0" }
+nulllobby-core = { path = "crates/nulllobby-core", version = "=0.5.1" }
+nulllobby-transport = { path = "crates/nulllobby-transport", version = "=0.5.1" }
+nulllobby-platform = { path = "crates/nulllobby-platform", version = "=0.5.1" }
+nulllobby-direct = { path = "crates/nulllobby-direct", version = "=0.5.1" }
+nulllobby-tor = { path = "crates/nulllobby-tor", version = "=0.5.1" }
+nulllobby-app = { path = "crates/nulllobby-app", version = "=0.5.1" }
+nulllobby-bot = { path = "crates/nulllobby-bot", version = "=0.5.1" }
+nulllobby-store = { path = "crates/nulllobby-store", version = "=0.5.1" }
 chacha20poly1305 = { version = "0.11.0", default-features = false, features = ["alloc", "zeroize"] }
 
 [workspace.lints.rust]
