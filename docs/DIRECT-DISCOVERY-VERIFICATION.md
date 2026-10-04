@@ -39,3 +39,13 @@ make check
 ```
 
 The third command contacts the public DHT and can fail due to network conditions. Normal CI uses bounded local fixtures. See [connection troubleshooting](wiki/Connectivity.md) for default end-user operation.
+
+## Release and installation
+
+The [0.5.2 release](https://github.com/kawaiipantsu/nulllobby/releases/tag/v0.5.2) targets source commit `43bd717399f4aaef00fa72ddff26aaca275f3288`. Both variants were built in pinned Debian 12 userspace with `libc6 (>= 2.36)`, signed through XXC Trust, and verified again after downloading all ten GitHub assets. The release Discussion notification was posted automatically.
+
+The official `zerotrust` APT publication contained exactly the two expected package additions. Signed archive metadata and both package downloads matched the release originals; a separate public `apt-verify` passed. Both variants then installed by name from the public repository in separate clean Debian 12 containers, with exact download comparisons and successful offline checks. These containers share the host kernel.
+
+The maintainer host upgraded its standard installation from 0.5.0 to 0.5.2 through APT. No other packages were added or removed. The installed executable matched the signed package; version, core-dump prevention, secret memory lock checks and offline diagnostics passed. Package hashes are recorded in the [APT guide](wiki/APT.md).
+
+The [GitHub workflow run](https://github.com/kawaiipantsu/nulllobby/actions/runs/37188364626) records the independent CI jobs. Local gate results above do not imply that a remote CI job has finished.

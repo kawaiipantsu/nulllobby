@@ -1,6 +1,6 @@
 # Official APT repository
 
-NullLobby Debian packages are published in the public [THUGS(red) APT repository](https://apt.thugs.red), suite **zerotrust**, component **main**. Version **0.5.1** is available for **amd64** in two variants:
+NullLobby Debian packages are published in the public [THUGS(red) APT repository](https://apt.thugs.red), suite **zerotrust**, component **main**. Version **0.5.2** is available for **amd64** in two variants:
 
 | Package | Tor backend |
 | --- | --- |
@@ -107,6 +107,19 @@ Repeating a successful publication verifies the existing packages without changi
 CI tests use synthetic credentials and signatures. Production APT credentials are not uploaded to GitHub. Publication runs from the authorized maintainer host, where the private management endpoint is reachable; GitHub-hosted runners are not assumed to have that access.
 
 ## Verification record
+
+### 0.5.2 — Direct discovery
+
+On 2026-10-04, both variants were built in pinned Debian 12 userspace, signed through XXC Trust, downloaded from the GitHub release and independently verified. The APT publisher reviewed exactly two package additions, published to `zerotrust`, and verified signed public metadata plus exact package bytes. A separate `apt-verify` passed.
+
+Two clean Debian 12 containers installed the respective variants by name from the public APT repository. Both downloads matched the signed release, and installed version/offline diagnostics passed with glibc 2.36. The maintainer host upgraded the standard package from 0.5.0 to 0.5.2 through APT without adding or removing other packages; its installed binary matched the signed package and diagnostics passed.
+
+This patch fixes default seedless Direct invitation discovery and adds F5/`/network` diagnostics. See [connectivity](Connectivity) and the [regression evidence](https://github.com/kawaiipantsu/nulllobby/blob/main/docs/DIRECT-DISCOVERY-VERIFICATION.md). Protocol/card v2 remains compatible with 0.5.0/0.5.1. Restart running processes after upgrading; ephemeral sessions need a newly created lobby and invitation.
+
+| Package | SHA-256 |
+| --- | --- |
+| `nulllobby_0.5.2_amd64.deb` | `5bf5242c7901815ff82e74b0d15b0c16e3ca89da80cd50244713a22d289c7e31` |
+| `nulllobby-arti-experimental_0.5.2_amd64.deb` | `3c398b833f101423e5d08f1876038ad5006d6c10645c278eadf06f28fb1dd8d9` |
 
 ### 0.5.1 — Debian 12
 
