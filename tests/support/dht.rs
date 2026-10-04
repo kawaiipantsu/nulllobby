@@ -73,6 +73,12 @@ fn response(mut body: Vec<u8>, transaction: &[u8]) -> Vec<u8> {
 }
 impl Fixture {
     pub async fn start() -> Self {
+        Self::start_inner(None).await
+    }
+    pub async fn start_with_announcement_gate(gate: Arc<tokio::sync::Semaphore>) -> Self {
+        Self::start_inner(Some(gate)).await
+    }
+    async fn start_inner(gate: Option<Arc<tokio::sync::Semaphore>>) -> Self {
         let router = UdpSocket::bind("127.0.0.1:0").await.unwrap();
         let storage = UdpSocket::bind("127.0.0.1:0").await.unwrap();
         let std::net::SocketAddr::V4(bootstrap) = router.local_addr().unwrap() else {
@@ -121,6 +127,9 @@ impl Fixture {
                         assert_eq!(q.token, b"test-token");
                         assert!(!q.implied_port);
                         assert_ne!(q.port, 0);
+                        if let Some(gate) = &gate {
+                            gate.acquire().await.unwrap().forget();
+                        }
                         assert!(ports.len() < 64);
                         ports.insert(q.port);
                         count.fetch_add(1, Ordering::SeqCst);

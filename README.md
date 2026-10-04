@@ -78,6 +78,8 @@ Public lobbies default to **unlisted**, with random 256-bit IDs. Discoverable lo
 
 F1 opens help, F2/F3 toggle sidebars, F4 opens settings, F6 previews pasted blocks, and F7 shows notifications. Chat starts empty; overlays fill the screen below the top menu. Timestamps, midnight separators, ASCII/Unicode borders, optional Nerd Font icons and five palettes are available.
 
+The Direct header shows live DHT bootstrap/discovery status and `Q/R/T/A` counters for queries, replies, tokens and acknowledged announcements, plus candidate peers. Updates arrive during each round; `DHT: Ready` stays separate from peer connection and encryption status. [Discovery screenshot](assets/screenshots/discovery.png).
+
 `/invite` keeps cards as one logical copyable line with native terminal wrapping. Ctrl+Y explicitly requests clipboard copy when supported; nothing is copied automatically.
 
 Use `/theme ember`, load a native palette, or import irssi colors/styles directly with `/theme /path/to/favorite.theme`. The importer supports 16/256/RGB colors and common styles; IRC templates and layouts are not reproduced. See the [terminal/theme guide](docs/wiki/Terminal.md).

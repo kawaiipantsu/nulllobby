@@ -14,6 +14,7 @@ use nulllobby_core::{
     governance::RotationOffer,
     membership::{Credential, EnrollmentRequest},
 };
+use nulllobby_direct::discovery::DiscoveryStats;
 use nulllobby_store::{RecordKind, StoredRecord, Vault};
 use nulllobby_transport::{
     Endpoint, EndpointHandle, NetworkObserver, NetworkStatus, Transport, TransportKind,
@@ -73,12 +74,12 @@ enum Net {
     Failed(Endpoint, &'static str),
     Packet([u8; 32], u64, Packet),
     Closed([u8; 32], u64),
-    Discovering,
-    Discovered(
-        Vec<Endpoint>,
-        nulllobby_direct::discovery::DiscoveryStats,
-        bool,
-    ),
+    Discovered(Vec<Endpoint>),
+}
+#[derive(Clone, Copy)]
+struct DiscoveryProgress {
+    state: DiscoveryState,
+    stats: DiscoveryStats,
 }
 struct Peer {
     tx: mpsc::Sender<Outbound>,
@@ -145,6 +146,7 @@ pub(crate) struct Room {
     status: String,
     network: LobbyNetworkView,
     discovery_refresh: tokio::sync::watch::Sender<()>,
+    discovery_progress: tokio::sync::watch::Sender<DiscoveryProgress>,
     persistent: bool,
     durable: bool,
     mailbox: bool,
@@ -241,6 +243,11 @@ impl Room {
             },
             ..Default::default()
         };
+        let discovery_progress = tokio::sync::watch::channel(DiscoveryProgress {
+            state: network.discovery,
+            stats: DiscoveryStats::default(),
+        })
+        .0;
         let mut room = Self {
             card,
             identity,
@@ -271,6 +278,7 @@ impl Room {
             status: "Listening; encrypted sessions required".to_owned(),
             network,
             discovery_refresh: tokio::sync::watch::channel(()).0,
+            discovery_progress,
             persistent,
             durable,
             mailbox,
@@ -337,6 +345,7 @@ impl Room {
                 })
             })
             .collect();
+        let progress = *self.discovery_progress.borrow();
         let _ = self
             .tx
             .send(Event::View(LobbyView {
@@ -349,6 +358,12 @@ impl Room {
                 memory: self.identity.memory_status(),
                 status: self.status.clone(),
                 network: LobbyNetworkView {
+                    discovery: progress.state,
+                    queries: progress.stats.queries,
+                    replies: progress.stats.replies,
+                    tokens: progress.stats.tokens,
+                    announces: progress.stats.announces,
+                    candidates: progress.stats.candidates,
                     pending_connections: self.dialing.len(),
                     ..self.network.clone()
                 },
@@ -447,24 +462,27 @@ impl Room {
         let tx = self.net_tx.clone();
         let bootstrap = self.config.discovery_bootstrap.clone();
         let mut refresh = self.discovery_refresh.subscribe();
+        let progress = self.discovery_progress.clone();
         self.tasks.spawn(async move {
             if bootstrap.as_ref().is_some_and(|seeds| {
                 seeds.is_empty()
                     || seeds.len() > 12
                     || seeds.iter().any(|s| !s.ip().is_loopback() || s.port() == 0)
             }) {
-                let _ = tx
-                    .send(Net::Discovered(vec![], Default::default(), false))
-                    .await;
+                progress.send_replace(DiscoveryProgress {
+                    state: DiscoveryState::Unavailable,
+                    stats: Default::default(),
+                });
                 return;
             }
             let mut discovery = None;
             let mut rounds = 0u8;
             loop {
-                if tx.send(Net::Discovering).await.is_err() {
-                    return;
-                }
                 if discovery.is_none() {
+                    progress.send_replace(DiscoveryProgress {
+                        state: DiscoveryState::Starting,
+                        stats: Default::default(),
+                    });
                     discovery = nulllobby_direct::discovery::Discovery::start(
                         observer.clone(),
                         bootstrap.clone(),
@@ -473,17 +491,28 @@ impl Room {
                     .ok();
                 }
                 let (peers, stats, success) = if let Some(dht) = &mut discovery {
-                    let result = dht.discover_and_announce(scope, port).await;
+                    let result = dht
+                        .discover_and_announce_with_progress(scope, port, |stats| {
+                            progress.send_replace(DiscoveryProgress {
+                                state: DiscoveryState::Querying,
+                                stats,
+                            });
+                        })
+                        .await;
                     let success = result.is_ok() && dht.stats().announces > 0;
                     (result.unwrap_or_default(), dht.stats(), success)
                 } else {
                     (vec![], Default::default(), false)
                 };
-                if tx
-                    .send(Net::Discovered(peers, stats, success))
-                    .await
-                    .is_err()
-                {
+                progress.send_replace(DiscoveryProgress {
+                    state: if success {
+                        DiscoveryState::Ready
+                    } else {
+                        DiscoveryState::Unavailable
+                    },
+                    stats,
+                });
+                if tx.send(Net::Discovered(peers)).await.is_err() {
                     return;
                 }
                 rounds = rounds.saturating_add(1);
@@ -897,21 +926,7 @@ impl Room {
                 }
                 self.view().await;
             }
-            Net::Discovering => {
-                self.network.discovery = DiscoveryState::Querying;
-                self.view().await;
-            }
-            Net::Discovered(peers, stats, success) => {
-                self.network.discovery = if success {
-                    DiscoveryState::Ready
-                } else {
-                    DiscoveryState::Unavailable
-                };
-                self.network.queries = stats.queries;
-                self.network.replies = stats.replies;
-                self.network.tokens = stats.tokens;
-                self.network.announces = stats.announces;
-                self.network.candidates = peers.len();
+            Net::Discovered(peers) => {
                 for endpoint in peers {
                     if !self.seeds.contains(&endpoint) && self.seeds.len() < 64 {
                         self.seeds.push(endpoint.clone());
@@ -993,6 +1008,7 @@ impl Room {
         true
     }
     pub async fn run(mut self) {
+        let mut discovery_progress = self.discovery_progress.subscribe();
         self.spawn_acceptors();
         self.discovery();
         if self.advertise().await.is_err() {
@@ -1008,11 +1024,19 @@ impl Room {
             }
             let mut tick = tokio::time::interval(Duration::from_secs(5));
             tick.tick().await;
+            let mut progress_tick = tokio::time::interval(Duration::from_millis(100));
+            progress_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             let mut heartbeat = 0u64;
             loop {
                 tokio::select! {
                     command = self.commands.recv() => { if !self.handle_command(command).await { break; } }
                     Some(event) = self.net_rx.recv() => self.handle_network(event).await,
+                    _ = progress_tick.tick(), if self.card.transport() == TransportKind::Direct && !self.config.no_dht => {
+                        if discovery_progress.has_changed().unwrap_or(false) {
+                            discovery_progress.borrow_and_update();
+                            self.view().await;
+                        }
+                    }
                     _ = tick.tick() => {
                         heartbeat = heartbeat.wrapping_add(1);
                         if !self.tick(heartbeat).await { break; }

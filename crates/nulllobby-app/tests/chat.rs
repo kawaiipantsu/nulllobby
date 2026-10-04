@@ -17,6 +17,48 @@ use tokio::sync::mpsc;
 #[path = "../../../tests/support/dht.rs"]
 mod dht;
 
+#[tokio::test]
+async fn discovery_progress_reaches_views_before_the_round_finishes() {
+    let gate = Arc::new(tokio::sync::Semaphore::new(0));
+    let fixture = dht::Fixture::start_with_announcement_gate(gate.clone()).await;
+    let mut client = Client::start(Config {
+        discovery_bootstrap: Some(vec![fixture.bootstrap]),
+        ..Default::default()
+    });
+    client
+        .send(AppCommand::CreatePublicLobby(
+            LobbyName::new("live discovery").unwrap(),
+        ))
+        .await;
+    let querying = tokio::time::timeout(
+        Duration::from_secs(1),
+        client.view(|l| {
+            l.network.discovery == nulllobby_core::domain::DiscoveryState::Querying
+                && l.network.tokens == 1
+        }),
+    )
+    .await
+    .expect("live view must arrive before the held announcement times out");
+    assert_eq!(querying.network.queries, 2);
+    assert_eq!(querying.network.replies, 2);
+    assert_eq!(querying.network.announces, 0);
+    assert_eq!(querying.peers, 0);
+    assert_eq!(
+        fixture.announces.load(std::sync::atomic::Ordering::SeqCst),
+        0
+    );
+    gate.add_permits(1);
+    let ready = client
+        .view(|l| l.network.discovery == nulllobby_core::domain::DiscoveryState::Ready)
+        .await;
+    assert_eq!(ready.network.announces, 1);
+    assert_eq!(
+        ready.peers, 0,
+        "ready discovery does not establish an encrypted peer session"
+    );
+    client.stop().await;
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn default_listeners_seedless_invite_discovery_and_encrypted_chat() {
     let fixture = dht::Fixture::start().await;

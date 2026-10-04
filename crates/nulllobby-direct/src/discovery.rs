@@ -29,13 +29,15 @@ pub struct Discovery {
     public_ip: Option<Ipv4Addr>,
     stats: DiscoveryStats,
 }
-#[derive(Clone, Copy, Default, Debug)]
+#[derive(Clone, Copy, Default, Debug, Eq, PartialEq)]
 pub struct DiscoveryStats {
     pub queries: usize,
     pub replies: usize,
     pub announces: usize,
     pub tokens: usize,
     pub observations: usize,
+    /// Unique, accepted peer endpoints found in this round, before authentication.
+    pub candidates: usize,
 }
 #[derive(Default)]
 struct Reply {
@@ -108,9 +110,22 @@ impl Discovery {
         scope: [u8; 32],
         port: NonZeroU16,
     ) -> Result<Vec<Endpoint>, TransportError> {
+        self.discover_and_announce_with_progress(scope, port, |_| {})
+            .await
+    }
+    /// Emits bounded, local counters before requests and after replies. The
+    /// synchronous callback must not block; callers can replace a watch snapshot.
+    /// No endpoints, swarm identifiers, tokens or packet contents are exposed.
+    pub async fn discover_and_announce_with_progress(
+        &mut self,
+        scope: [u8; 32],
+        port: NonZeroU16,
+        mut progress: impl FnMut(DiscoveryStats),
+    ) -> Result<Vec<Endpoint>, TransportError> {
         self.observer
             .before_network_action(NetworkAction::MainlineDht)?;
         self.stats = DiscoveryStats::default();
+        progress(self.stats);
         let mut hash = [0; 20];
         hash.copy_from_slice(&scope[..20]);
         let mut candidates: Vec<_> = self
@@ -134,6 +149,7 @@ impl Discovery {
             let (node_id, address) = candidates.remove(index);
             visited.insert(address);
             self.stats.queries += 1;
+            progress(self.stats);
             // Bootstrap routers supply routing contacts, not necessarily
             // get_peers tokens/values. First find the nodes nearest this swarm.
             let bootstrap = node_id == [0; 20];
@@ -164,6 +180,7 @@ impl Discovery {
                     peers.insert(peer);
                 }
             }
+            self.stats.candidates = peers.len();
             for node in reply.nodes {
                 if candidates.len() < MAX_NODES
                     && (self.local_fixture || public_v4(*node.1.ip()))
@@ -173,6 +190,7 @@ impl Discovery {
                     candidates.push(node);
                 }
             }
+            progress(self.stats);
             if !bootstrap
                 && !reply.token.is_empty()
                 && self
@@ -181,6 +199,7 @@ impl Discovery {
                     .is_ok()
             {
                 self.stats.announces += 1;
+                progress(self.stats);
             }
         }
         if self.stats.replies == 0 {

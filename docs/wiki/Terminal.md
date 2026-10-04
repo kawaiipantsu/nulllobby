@@ -36,6 +36,8 @@ Timestamps use local `HH:MM:SS`; `/timestamps on|off` or F9 toggles them. A hori
 
 The header separately shows connectivity, transport/IP exposure, encryption, lobby type, verified peers and padding. F5 and `/security` show details. Short fingerprints in chat/member panels are only labels: use `/fingerprint`, `/who` and full fingerprints for verification.
 
+Direct mode also has a live DHT row: bootstrapping, discovery, ready, retrying or disabled. `Q/R/T/A` count lookup attempts, replies, tokens and acknowledged announcements; candidates count endpoints before authentication. Counts update during each round and reset when a new round starts. Switching lobbies switches the displayed counters. Narrow terminals shorten the row automatically. DHT readiness does not mean a peer is connected or verified. See [connection troubleshooting](Connectivity).
+
 ## Palettes and borders
 
 Built-in palettes: `null`, `ember`, `ice`, `classic`, `light`.

@@ -78,7 +78,7 @@ fn screenshots() -> Result<()> {
         return Err("screenshot renderer failed".into());
     }
     fs::create_dir_all("assets/screenshots")?;
-    for name in ["chat", "irssi", "help", "settings", "delivery"] {
+    for name in ["chat", "irssi", "help", "settings", "delivery", "discovery"] {
         command(
             "rsvg-convert",
             &[

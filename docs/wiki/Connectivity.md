@@ -18,6 +18,21 @@ No CLI peer override or fixed listening port is required for this workflow. Defa
 
 Discovery can take tens of seconds or several rounds. Initial rounds retry after ten seconds; later successful rounds pause for two minutes. `/reconnect` retries known endpoints and requests a fresh DHT round, with a minimum ten-second pause between rounds. It never changes transport.
 
+## Live header status
+
+Starting with 0.5.3, Direct mode has a dedicated DHT header row. It updates during requests, without opening an overlay:
+
+```text
+DHT: Bootstrapping...
+DHT: Discovering | Q/8 R/5 T/4 A/3 - 2 candidates
+DHT: Ready | Q/24 R/13 T/11 A/10 - 2 candidates
+DHT: Unavailable; retrying | Q/6 R/0 T/0 A/0 - 0 candidates
+```
+
+`Q` counts lookup attempts, `R` matching replies, `T` received announce tokens, and `A` acknowledged announcements. Candidates are unique accepted peer endpoints before authentication. Counts reset for each round; ready/retry states retain the completed round's counts. Narrow terminals show `C/2` for candidates, or only the phase when the counters cannot fit. Disabled discovery is shown explicitly; Tor has no DHT row.
+
+Progress uses one replaceable snapshot per lobby and UI updates up to ten times per second. It creates no packet log or per-query event backlog. The current lobby determines which counters are shown. DHT readiness means a successful announcement, not a reachable listener, authenticated peer, or human-verified identity.
+
 ## F5 or `/network`
 
 The network overlay reports local diagnostic data without printing invitations, keys, chat or remote address histories.
@@ -28,7 +43,7 @@ The network overlay reports local diagnostic data without printing invitations, 
 | DHT Starting / Querying | Bootstrap or a bounded lookup round is in progress |
 | DHT Ready | At least one node acknowledged an announcement in the last round |
 | DHT Unavailable | No successful announcement in the last round; retries continue |
-| Queries / replies | Lookup requests and matching replies; bootstrap replies alone do not prove usable discovery |
+| Queries / replies | Current-round lookup attempts and matching replies while querying; completed-round totals afterward. Bootstrap replies alone do not prove usable discovery |
 | Tokens / announcements | Nodes returning announce tokens and acknowledging announcements |
 | Candidate peers | DHT endpoints found before authentication; may include stale records or this client |
 | Pending connections | Outbound transport/authentication attempts still running |

@@ -422,7 +422,16 @@ impl App {
                             net.listener
                         ))
                         .await;
-                        self.notice(format!("DHT: {:?} | last round: {} queries, {} replies, {} tokens, {} announcements, {} candidate peers", net.discovery, net.queries, net.replies, net.tokens, net.announces, net.candidates)).await;
+                        let round = if matches!(
+                            net.discovery,
+                            nulllobby_core::domain::DiscoveryState::Starting
+                                | nulllobby_core::domain::DiscoveryState::Querying
+                        ) {
+                            "current round"
+                        } else {
+                            "last round"
+                        };
+                        self.notice(format!("DHT: {:?} | {round}: {} queries, {} replies, {} tokens, {} announcements, {} candidate peers", net.discovery, net.queries, net.replies, net.tokens, net.announces, net.candidates)).await;
                         self.notice(format!("Pending peer connections: {} | failed outbound attempts: {} | last failure: {}", net.pending_connections, net.failed_connections, net.last_failure.unwrap_or("none"))).await;
                         if self.config.mode == TransportKind::Direct {
                             self.notice("DHT replies do not prove that a peer TCP listener is reachable. Seedless cards need DHT discovery; allow DNS and outbound UDP, and inbound TCP to at least one participant's listener. No automatic NAT traversal.").await;

@@ -1,6 +1,9 @@
 //! Reproducible documentation images from the real renderer, synthetic data only.
 use super::*;
-use nulllobby_core::{Fingerprint, domain::MemberView};
+use nulllobby_core::{
+    Fingerprint,
+    domain::{DiscoveryState, LobbyNetworkView, MemberView},
+};
 use nulllobby_platform::HardeningStatus;
 use ratatui::{
     backend::TestBackend,
@@ -136,6 +139,15 @@ fn render_documentation() {
     capture(&state, &output.join("chat.svg"));
     state.input.clear();
     state.mode = TransportKind::Direct;
+    state.lobbies[0].network = LobbyNetworkView {
+        discovery: DiscoveryState::Ready,
+        queries: 24,
+        replies: 13,
+        tokens: 11,
+        announces: 10,
+        candidates: 2,
+        ..Default::default()
+    };
     state.theme = Theme::load(
         &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../themes/nulllobby.theme"),
     )
@@ -179,6 +191,26 @@ fn render_documentation() {
         *time = "19:25:00".into();
     }
     capture(&state, &output.join("delivery.svg"));
+    state.mode = TransportKind::Direct;
+    state.history.clear();
+    state.lobbies[0].name = "Joining lobby".into();
+    state.lobbies[0].kind = LobbyKind::PublicUnlisted;
+    state.lobbies[0].peers = 0;
+    state.lobbies[0].members.truncate(1);
+    state.lobbies[0].persistent = false;
+    state.lobbies[0].durable = false;
+    state.lobbies[0].mailbox = false;
+    state.lobbies[0].status = "Listening; encrypted sessions required".into();
+    state.lobbies[0].network = LobbyNetworkView {
+        discovery: DiscoveryState::Querying,
+        queries: 8,
+        replies: 5,
+        tokens: 4,
+        announces: 3,
+        candidates: 2,
+        ..Default::default()
+    };
+    capture(&state, &output.join("discovery.svg"));
 }
 fn capture(state: &State, path: &std::path::Path) {
     let mut terminal = Terminal::new(TestBackend::new(140, 32)).unwrap();

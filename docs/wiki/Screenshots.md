@@ -14,6 +14,12 @@ The bundled irssi-compatible example imports a blue status background and suppor
 
 ![Imported irssi color roles](https://raw.githubusercontent.com/kawaiipantsu/nulllobby/main/assets/screenshots/irssi.png)
 
+## Live Direct discovery
+
+The extra Direct header row updates during the lookup: queries, replies, tokens, acknowledged announcements and candidate peers. This synthetic example has no authenticated peer session yet, so it still says `ENCRYPTION REQUIRED`. Counters do not expose addresses or invitation contents.
+
+![Live DHT discovery](https://raw.githubusercontent.com/kawaiipantsu/nulllobby/main/assets/screenshots/discovery.png)
+
 ## Full-screen settings
 
 Settings cover the screen below the top menu. The ember palette is selected here; persistence remains off.

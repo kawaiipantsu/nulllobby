@@ -398,6 +398,42 @@ impl State {
         text.push_str("\n/connect <number> joins using a fresh identity.\n/autoconnect <number> on|off changes startup behavior.\n/forget <number> removes a remembered lobby.\n\nPrivate invites are never saved. Tor seeds may be offline after restart.");
         text
     }
+    fn dht_line(&self, lobby: Option<&LobbyView>, width: u16) -> Line<'static> {
+        use nulllobby_core::domain::DiscoveryState;
+        let Some(lobby) = lobby else {
+            return Line::styled("DHT: Idle - create or join a lobby", self.theme.muted);
+        };
+        let net = &lobby.network;
+        let (label, compact, style) = match net.discovery {
+            DiscoveryState::NotUsed => ("Not used", "Not used", self.theme.muted),
+            DiscoveryState::Disabled => ("Disabled", "Disabled", self.theme.muted),
+            DiscoveryState::Starting => {
+                ("Bootstrapping...", "Bootstrapping...", self.theme.warning)
+            }
+            DiscoveryState::Querying => ("Discovering", "Querying", self.theme.warning),
+            DiscoveryState::Ready => ("Ready", "Ready", self.theme.accent),
+            DiscoveryState::Unavailable => ("Unavailable; retrying", "Retrying", self.theme.error),
+        };
+        let counters = matches!(
+            net.discovery,
+            DiscoveryState::Querying | DiscoveryState::Ready | DiscoveryState::Unavailable
+        );
+        let mut text = format!("DHT: {label}");
+        if counters {
+            let counts = format!(
+                "Q/{} R/{} T/{} A/{}",
+                net.queries, net.replies, net.tokens, net.announces
+            );
+            text.push_str(&format!(" | {counts} - {} candidates", net.candidates));
+            if text.len() > usize::from(width) {
+                text = format!("DHT: {compact} | {counts} C/{}", net.candidates);
+                if text.len() > usize::from(width) {
+                    text = format!("DHT: {compact}");
+                }
+            }
+        }
+        Line::styled(text, style)
+    }
     fn draw(&self, frame: &mut ratatui::Frame<'_>) {
         let area = frame.area();
         frame.render_widget(
@@ -408,7 +444,11 @@ impl State {
             .direction(Direction::Vertical)
             .constraints([
                 Constraint::Length(1),
-                Constraint::Length(4),
+                Constraint::Length(if self.mode == TransportKind::Direct {
+                    5
+                } else {
+                    4
+                }),
                 Constraint::Min(1),
                 Constraint::Length(1),
                 Constraint::Length(1),
@@ -466,7 +506,7 @@ impl State {
             LobbyKind::PublicDiscoverable => "DISCOVERABLE",
         });
         let icon = if self.settings.icons { "󰒃 " } else { "" };
-        let status = vec![
+        let mut status = vec![
             Line::from(vec![
                 Span::styled(
                     format!("{icon}{connection}"),
@@ -495,6 +535,9 @@ impl State {
                 }
             )),
         ];
+        if self.mode == TransportKind::Direct {
+            status.push(self.dht_line(lobby, rows[1].width.saturating_sub(2)));
+        }
         frame.render_widget(
             Paragraph::new(status).style(self.theme.status).block(
                 self.block(lobby.map_or("No lobby".into(), |l| sanitize_terminal(&l.name, 96))),
@@ -1234,6 +1277,119 @@ pub fn run(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn live_dht_header_shows_progress_without_claiming_peer_security() {
+        use nulllobby_core::domain::{DiscoveryState, LobbyNetworkView};
+        let mut state = State::new(
+            Settings {
+                welcome_seen: true,
+                ..Default::default()
+            },
+            TransportKind::Direct,
+        );
+        state.network = NetworkStatus::Ready;
+        let id = LobbyId::from_bytes([1; 32]);
+        state.current = Some(id);
+        state.lobbies.push(LobbyView {
+            id,
+            name: "status test".into(),
+            kind: LobbyKind::PublicUnlisted,
+            peers: 0,
+            members: vec![],
+            fingerprint: nulllobby_core::Fingerprint::of_public_key(&[1; 32]),
+            memory: [nulllobby_platform::HardeningStatus::Unsupported; 2],
+            status: "Listening".into(),
+            network: LobbyNetworkView::default(),
+            persistent: false,
+            durable: false,
+            mailbox: false,
+            administrator: false,
+        });
+        for width in [48, 60, 80, 120] {
+            let mut terminal =
+                Terminal::new(ratatui::backend::TestBackend::new(width, 24)).unwrap();
+            for (phase, label) in [
+                (DiscoveryState::Starting, "DHT: Bootstrapping..."),
+                (
+                    DiscoveryState::Querying,
+                    if width == 48 {
+                        "DHT: Querying"
+                    } else {
+                        "DHT: Discovering"
+                    },
+                ),
+                (DiscoveryState::Ready, "DHT: Ready"),
+                (
+                    DiscoveryState::Unavailable,
+                    if width <= 60 {
+                        "DHT: Retrying"
+                    } else {
+                        "DHT: Unavailable; retrying"
+                    },
+                ),
+                (DiscoveryState::Disabled, "DHT: Disabled"),
+            ] {
+                state.lobbies[0].network = LobbyNetworkView {
+                    discovery: phase,
+                    queries: 24,
+                    replies: 13,
+                    tokens: 11,
+                    announces: 10,
+                    candidates: 2,
+                    ..Default::default()
+                };
+                terminal.draw(|f| state.draw(f)).unwrap();
+                let screen: String = terminal
+                    .backend()
+                    .buffer()
+                    .content
+                    .iter()
+                    .map(|c| c.symbol())
+                    .collect();
+                assert!(screen.contains(label), "phase {phase:?} at width {width}");
+                if matches!(
+                    phase,
+                    DiscoveryState::Querying | DiscoveryState::Ready | DiscoveryState::Unavailable
+                ) {
+                    assert!(screen.contains("Q/24 R/13 T/11 A/10"));
+                    assert!(screen.contains("2 candidates") || screen.contains("C/2"));
+                } else {
+                    assert!(!screen.contains("Q/24"));
+                }
+                assert!(screen.contains("ENCRYPTION REQUIRED"));
+                assert!(!screen.contains("CONNECTED"));
+            }
+        }
+        // Switching lobby renders that lobby's own latest counters.
+        let mut other = state.lobbies[0].clone();
+        other.id = LobbyId::from_bytes([2; 32]);
+        other.network.discovery = DiscoveryState::Querying;
+        other.network.queries = 3;
+        state.current = Some(other.id);
+        state.lobbies.push(other);
+        let mut terminal = Terminal::new(ratatui::backend::TestBackend::new(120, 24)).unwrap();
+        terminal.draw(|f| state.draw(f)).unwrap();
+        let screen: String = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|c| c.symbol())
+            .collect();
+        assert!(screen.contains("Q/3 "));
+        assert!(!screen.contains("Q/24"));
+        state.mode = TransportKind::Tor;
+        terminal.draw(|f| state.draw(f)).unwrap();
+        let screen: String = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|c| c.symbol())
+            .collect();
+        assert!(!screen.contains("DHT:"));
+        assert!(screen.contains("TOR / ONION TRANSPORT"));
+    }
     #[test]
     fn clean_chat_notices_and_small_layouts() {
         let settings = Settings {
