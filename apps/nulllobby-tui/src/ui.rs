@@ -57,6 +57,14 @@ Paste with your terminal's shortcut. Enter sends; multiline paste is text.
 /remember <label>  /bookmarks  /connect <number>
 /autoconnect <number> on|off  /forget <number>
 
+OPTIONAL TEAM FEATURES (protocol v2)
+/identity persistent|ephemeral  /stored  /resume <number>
+/delivery live|durable  /mailbox on|off  /sync
+Persistence needs an explicitly opened encrypted --vault; trust stays in RAM.
+/rotate  /revoke <full fingerprint>  Private lobby administrator only
+/org trust <issuer key>  /org request <file>  /org import <file>  /org off
+Organization membership is separate from human verification and admission.
+
 /privacy /security /padding none|bucketed /reconnect /leave /quit"#;
 const WELCOME: &str = r#"EPHEMERAL LOBBY CHAT
 
@@ -67,8 +75,8 @@ const WELCOME: &str = r#"EPHEMERAL LOBBY CHAT
 
 Noise encryption is always required. Private lobbies also require a random capability. Direct exposes peer IPs. Select /transport tor before joining to use onion transport; configure external Tor or experimental Arti at launch.
 
-Identities, trust and history stay in RAM. Restart creates fresh fingerprints.
-F4 opens optional remembered preferences; private invitations are never saved.
+Defaults keep identities, trust and live chat in RAM. Unsaved fingerprints change on restart.
+F4 opens optional preferences. Secret storage needs a separate explicit encrypted vault and per-lobby opt-in. Human trust always stays in RAM.
 
 F1 opens help at any time. Esc or Enter dismisses this welcome screen."#;
 const ASCII: ratatui::symbols::border::Set = ratatui::symbols::border::Set {
@@ -106,6 +114,9 @@ enum Modal {
 enum Record {
     Day(NaiveDate),
     Message {
+        id: [u8; 16],
+        delivery: Option<nulllobby_core::domain::DeliveryState>,
+        historical: bool,
         time: String,
         nick: Zeroizing<String>,
         body: Zeroizing<String>,
@@ -258,6 +269,8 @@ impl State {
                 self.notice(&text, show);
             }
             AppEvent::MessageReceived {
+                id,
+                historical,
                 lobby,
                 fingerprint,
                 nickname,
@@ -279,6 +292,13 @@ impl State {
                     .iter()
                     .any(|l| l.id == lobby && l.fingerprint == fingerprint);
                 history.push(Record::Message {
+                    id,
+                    delivery: if own {
+                        Some(nulllobby_core::domain::DeliveryState::Queued)
+                    } else {
+                        None
+                    },
+                    historical,
                     time: now.format("%H:%M:%S").to_string(),
                     nick: Zeroizing::new(sanitize_terminal(&nickname, 32)),
                     body: Zeroizing::new(sanitize_terminal(&body, 8192)),
@@ -286,6 +306,21 @@ impl State {
                     verified,
                     own,
                 });
+            }
+            AppEvent::Delivery { lobby, id, state } => {
+                if let Some(history) = self.history.get_mut(&lobby) {
+                    for record in &mut history.records {
+                        if let Record::Message {
+                            id: message_id,
+                            delivery,
+                            ..
+                        } = record
+                            && *message_id == id
+                        {
+                            *delivery = Some(state.clone());
+                        }
+                    }
+                }
             }
             AppEvent::Invite(card) => {
                 if let Some(name) = self.remember.take() {
@@ -498,12 +533,15 @@ impl State {
                         ));
                     }
                     Record::Message {
+                        delivery,
+                        historical,
                         time,
                         nick,
                         body,
                         fingerprint,
                         verified,
                         own,
+                        ..
                     } => {
                         let mut spans = Vec::new();
                         if self.settings.timestamps {
@@ -529,6 +567,21 @@ impl State {
                             self.theme.muted,
                         ));
                         spans.push(Span::raw(body.as_str()));
+                        if *historical {
+                            spans.push(Span::styled(" [durable]", self.theme.muted));
+                        }
+                        if let Some(delivery) = delivery {
+                            use nulllobby_core::domain::DeliveryState;
+                            let status = match delivery {
+                                DeliveryState::Queued => "queued",
+                                DeliveryState::Sent => "sent",
+                                DeliveryState::Received(_) => "peer received",
+                                DeliveryState::Stored(_) => "mailbox stored",
+                                DeliveryState::Expired => "expired",
+                                DeliveryState::Failed => "failed",
+                            };
+                            spans.push(Span::styled(format!(" [{status}]"), self.theme.muted));
+                        }
                         lines.push(Line::from(spans));
                     }
                 }
@@ -536,7 +589,13 @@ impl State {
         }
         let messages = Paragraph::new(lines)
             .wrap(Wrap { trim: false })
-            .block(self.block("Chat · RAM only"));
+            .block(
+                self.block(if lobby.is_some_and(|l| l.durable || l.mailbox) {
+                    "Chat · durable opt-in"
+                } else {
+                    "Chat · live / RAM"
+                }),
+            );
         let line_count = messages.line_count(cols[1].width.saturating_sub(2));
         let offset = line_count
             .saturating_sub(cols[1].height.saturating_sub(2) as usize)
@@ -559,7 +618,11 @@ impl State {
                 ));
                 members.push(Line::styled(
                     if own {
-                        "you · ephemeral identity"
+                        if lobby.is_some_and(|l| l.persistent) {
+                            "you · saved identity"
+                        } else {
+                            "you · ephemeral identity"
+                        }
                     } else if member.verified {
                         "encrypted / verified"
                     } else {
@@ -571,6 +634,12 @@ impl State {
                         self.theme.warning
                     },
                 ));
+                if let Some(org) = &member.organization {
+                    members.push(Line::styled(
+                        format!("org: {}", sanitize_terminal(org, 100)),
+                        self.theme.accent,
+                    ));
+                }
                 members.push(Line::default());
             }
             frame.render_widget(
@@ -591,8 +660,14 @@ impl State {
                 " {}   |   {} notices   |   {}",
                 sanitize_terminal(detail, 200),
                 self.unread,
-                if self.settings.path.is_some() {
-                    "preferences saved · chat RAM only"
+                if lobby.is_some_and(|l| l.mailbox) {
+                    "encrypted vault · mailbox ON"
+                } else if lobby.is_some_and(|l| l.durable) {
+                    "encrypted vault · durable sending"
+                } else if lobby.is_some_and(|l| l.persistent) {
+                    "saved identity · live chat RAM"
+                } else if self.settings.path.is_some() {
+                    "preferences saved · live chat RAM"
                 } else {
                     "RAM only"
                 }
@@ -651,7 +726,7 @@ impl State {
                 Modal::Invite => crate::invite::INSTRUCTIONS.into(),
                 Modal::Preview => format!(
                     "PASTE PREVIEW — Enter in the input sends each nonempty line as text.\n\n{}",
-                    if self.input.text().contains("nl:v1:")
+                    if self.input.text().contains("nl:")
                         || self.input.text().trim_start().starts_with("/join ")
                     {
                         "[Lobby card hidden]"
@@ -717,7 +792,7 @@ impl State {
             return;
         }
         if self.input.text().contains('\n') {
-            if self.input.text().contains("nl:v1:")
+            if self.input.text().contains("nl:")
                 || self
                     .input
                     .text()
@@ -1192,7 +1267,7 @@ mod tests {
         }
         state
             .input
-            .paste("/join nl:v1:direct-private:synthetic\n")
+            .paste("/join nl:v2:direct-private:synthetic\n")
             .unwrap();
         state.submit(&tx);
         assert!(

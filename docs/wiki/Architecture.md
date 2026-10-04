@@ -8,6 +8,7 @@
 | `nulllobby-transport` | Async byte streams, framing, endpoint types, mode policy, bounded channels and resource permits |
 | `nulllobby-direct` | Standard BitTorrent handshake, BEP 10 adapter and bounded BEP 5 discovery |
 | `nulllobby-tor` | SAFECOOKIE control, local SOCKS, v3 onion validation, ephemeral service lifecycle |
+| `nulllobby-store` | Explicit encrypted vaults, OS Secret Service keys, bounded durable delivery and sequence reservations |
 | `nulllobby-platform` | Secret memory mappings, zeroization, Linux core-dump controls and isolated FFI |
 | `nulllobby-app` | Command/event orchestration, lobby workers, authenticated gossip, peer lifecycle |
 | `nulllobby-tui` | Ratatui/Crossterm rendering, keyboard input and explicit invite display |
@@ -41,7 +42,7 @@ One process-wide semaphore caps live peers at 128 and another caps pending hands
 
 `AppCommand` handles typed user intent. `AppEvent` reports bounded view snapshots, verified messages, notices and lifecycle changes. The TUI imports no socket or cipher implementation. Future desktop clients can reuse the same boundary.
 
-All normal application state lives in memory. Secret seeds, capabilities and static Noise keys use dedicated locked mappings when permitted. Noise library internals and terminal buffers are not all locked or guaranteed to zeroize; see the security model. Build/release files and test fixtures are developer operations, separate from runtime persistence.
+Default application state lives in memory. Explicit vault operations run on blocking workers below the UI; the core has no filesystem storage. Optional organization issuance also stays below the UI and performs no network calls. Secret seeds, capabilities and static Noise keys use dedicated locked mappings when permitted. Noise library internals and terminal buffers are not all locked or guaranteed to zeroize; see the security model. Build/release files and test fixtures are developer operations, separate from runtime persistence.
 
 ## Transport selection
 

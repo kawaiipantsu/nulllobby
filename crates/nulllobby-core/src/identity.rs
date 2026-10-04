@@ -33,6 +33,22 @@ impl EphemeralIdentity {
             noise_static: NoiseStaticSecret::generate()?,
         })
     }
+    /// Explicit storage boundary. Restoring a lobby signing seed never restores
+    /// its Noise static key; that key is freshly generated for this join.
+    pub fn from_persisted(lobby: LobbyId, seed: SecretBytes<32>) -> Result<Self, SecretError> {
+        Ok(Self {
+            lobby,
+            seed,
+            noise_static: NoiseStaticSecret::generate()?,
+        })
+    }
+    /// Only the opted-in encrypted storage layer consumes this secret copy.
+    pub fn persistence_seed(&self) -> Result<SecretBytes<32>, SecretError> {
+        let mut seed = SecretBytes::zeroed().map_err(|_| SecretError::Allocation)?;
+        seed.expose_secret_mut()
+            .copy_from_slice(self.seed.expose_secret());
+        Ok(seed)
+    }
     pub fn lobby(&self) -> LobbyId {
         self.lobby
     }

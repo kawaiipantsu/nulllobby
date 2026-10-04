@@ -109,7 +109,7 @@ impl Bot {
                             members = view.members.iter().map(|m| m.fingerprint).collect();
                         }
                     }
-                    Some(AppEvent::MessageReceived { lobby: id, fingerprint, body, .. }) => {
+                    Some(AppEvent::MessageReceived { lobby: id, fingerprint, body, historical:false, .. }) => {
                         let body = Zeroizing::new(body);
                         if !lobby.is_some_and(|l| l.0 == id && l.1 != fingerprint) || !jobs.is_empty()
                             || requests >= self.max_requests || last_request.is_some_and(|t| t.elapsed() < Duration::from_secs(5)) { continue; }

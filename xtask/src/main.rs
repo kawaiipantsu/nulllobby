@@ -75,7 +75,7 @@ fn screenshots() -> Result<()> {
         return Err("screenshot renderer failed".into());
     }
     fs::create_dir_all("assets/screenshots")?;
-    for name in ["chat", "irssi", "help", "settings"] {
+    for name in ["chat", "irssi", "help", "settings", "delivery"] {
         command(
             "rsvg-convert",
             &[
@@ -197,7 +197,14 @@ fn deb(arti: bool) -> Result<()> {
     for file in ["README.md", "SECURITY.md", "LICENSE"] {
         fs::copy(file, stage.join("usr/share/doc/nulllobby").join(file))?;
     }
-    for file in ["docs/wiki/Terminal.md", "docs/wiki/Bots.md"] {
+    for file in [
+        "docs/wiki/Terminal.md",
+        "docs/wiki/Bots.md",
+        "docs/wiki/Storage-and-Delivery.md",
+        "docs/wiki/Private-Lobbies.md",
+        "docs/wiki/Organization.md",
+        "docs/wiki/Protocol.md",
+    ] {
         fs::copy(
             file,
             stage.join("usr/share/doc/nulllobby").join(
@@ -249,7 +256,7 @@ fn deb(arti: bool) -> Result<()> {
     fs::write(
         stage.join("DEBIAN/control"),
         format!(
-            "Package: {package}\nVersion: {version}\nSection: net\nPriority: optional\nArchitecture: amd64\nMaintainer: NullLobby maintainers\nDepends: libc6 (>= {minimum}), libgcc-s1, ca-certificates{libraries}\nSuggests: tor\n{extra}Homepage: https://thugs.red\nDescription: RAM-first encrypted decentralized lobby chat\n Linux terminal client with signed messages, Direct P2P and Tor onion transport.\n Embedded Arti support in this package: {arti}.\n"
+            "Package: {package}\nVersion: {version}\nSection: net\nPriority: optional\nArchitecture: amd64\nMaintainer: NullLobby maintainers\nDepends: libc6 (>= {minimum}), libgcc-s1, ca-certificates{libraries}\nSuggests: tor, libsecret-tools, gnome-keyring\n{extra}Homepage: https://thugs.red\nDescription: RAM-first encrypted decentralized lobby chat\n Linux terminal client with signed messages, Direct P2P and Tor onion transport.\n Embedded Arti support in this package: {arti}.\n"
         ),
     )?;
     fs::create_dir_all("dist")?;
@@ -664,6 +671,15 @@ fn announce(tag: &str) -> Result<()> {
 }
 
 fn fuzz_smoke() -> Result<()> {
+    let seconds = std::env::var("NULLLOBBY_FUZZ_SECONDS")
+        .ok()
+        .map(|v| v.parse::<u32>())
+        .transpose()?
+        .unwrap_or(10);
+    if !(1..=3600).contains(&seconds) {
+        return Err("fuzz duration must be 1..3600 seconds per target".into());
+    }
+    let duration = format!("-max_total_time={seconds}");
     let toolchain = format!(
         "+{}",
         std::env::var("NULLLOBBY_FUZZ_TOOLCHAIN").unwrap_or_else(|_| "nightly".to_owned())
@@ -678,6 +694,9 @@ fn fuzz_smoke() -> Result<()> {
         "application",
         "endpoint",
         "terminal",
+        "rotation",
+        "membership",
+        "vault",
     ] {
         command(
             "cargo",
@@ -687,7 +706,7 @@ fn fuzz_smoke() -> Result<()> {
                 "run",
                 target,
                 "--",
-                "-max_total_time=10",
+                &duration,
                 "-max_len=65536",
                 "-rss_limit_mb=512",
             ],

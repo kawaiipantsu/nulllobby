@@ -9,7 +9,7 @@ use minicbor::{Decoder, Encoder};
 use std::convert::Infallible;
 
 pub const MAX_MESSAGE_BYTES: usize = 12_288;
-const DOMAIN: &str = "nulllobby.message.v1";
+const DOMAIN: &str = "nulllobby.message.v2";
 #[derive(Clone)]
 pub enum Payload {
     Join {
@@ -17,6 +17,16 @@ pub enum Payload {
         name: LobbyName,
     },
     Chat(ValidatedText<{ limits::CHAT_BYTES }>),
+    DurableChat {
+        body: ValidatedText<{ limits::CHAT_BYTES }>,
+        created: u64,
+        expires: u64,
+    },
+    Receipt {
+        sender: [u8; 32],
+        id: [u8; 16],
+        stored: bool,
+    },
     Leave,
     Endpoint {
         service_key: [u8; 32],
@@ -98,7 +108,7 @@ impl SignedMessage {
         let mut e = Encoder::new(Vec::with_capacity(256));
         e.array(8)?
             .str(DOMAIN)?
-            .u16(1)?
+            .u16(crate::domain::PROTOCOL_VERSION)?
             .bytes(self.lobby.as_bytes())?
             .bytes(&self.sender)?
             .u64(self.sequence)?
@@ -115,6 +125,23 @@ impl SignedMessage {
             }
             Payload::Leave => {
                 e.u8(3)?.array(0)?;
+            }
+            Payload::DurableChat {
+                body,
+                created,
+                expires,
+            } => {
+                if *created == 0 || *expires <= *created || *expires - *created > 86400 {
+                    return Err(MessageError::Encoding);
+                }
+                e.u8(5)?
+                    .array(3)?
+                    .str(body.as_str())?
+                    .u64(*created)?
+                    .u64(*expires)?;
+            }
+            Payload::Receipt { sender, id, stored } => {
+                e.u8(6)?.array(3)?.bytes(sender)?.bytes(id)?.bool(*stored)?;
             }
             Payload::Endpoint {
                 service_key,
@@ -158,7 +185,7 @@ impl SignedMessage {
         if d.str()? != DOMAIN {
             return Err(MessageError::Encoding);
         }
-        if d.u16()? != 1 {
+        if d.u16()? != crate::domain::PROTOCOL_VERSION {
             return Err(MessageError::Version);
         }
         let lobby = LobbyId::from_bytes(fixed(&mut d)?);
@@ -192,6 +219,22 @@ impl SignedMessage {
                     service_key,
                     port,
                     expires: d.u64()?,
+                }
+            }
+            5 => {
+                array(&mut d, 3)?;
+                Payload::DurableChat {
+                    body: ValidatedText::new(d.str()?).map_err(|_| MessageError::Encoding)?,
+                    created: d.u64()?,
+                    expires: d.u64()?,
+                }
+            }
+            6 => {
+                array(&mut d, 3)?;
+                Payload::Receipt {
+                    sender: fixed(&mut d)?,
+                    id: fixed(&mut d)?,
+                    stored: d.bool()?,
                 }
             }
             _ => return Err(MessageError::Encoding),
@@ -246,11 +289,14 @@ pub enum Packet {
     Pong(u64),
     Disconnect,
     Error,
+    Rotation(crate::governance::RotationOffer),
+    Sync,
+    Membership(Vec<u8>),
 }
 impl Packet {
     pub fn encode(&self) -> Result<Vec<u8>, MessageError> {
         let mut e = Encoder::new(Vec::with_capacity(256));
-        e.array(3)?.u16(1)?;
+        e.array(3)?.u16(crate::domain::PROTOCOL_VERSION)?;
         match self {
             Self::Hello => {
                 e.u8(0)?.u8(0)?;
@@ -282,6 +328,18 @@ impl Packet {
             Self::Error => {
                 e.u8(6)?.u8(0)?;
             }
+            Self::Rotation(offer) => {
+                e.u8(7)?.bytes(&offer.encode()?)?;
+            }
+            Self::Sync => {
+                e.u8(8)?.u8(0)?;
+            }
+            Self::Membership(bytes) => {
+                if bytes.len() > crate::membership::MAX_CREDENTIAL {
+                    return Err(MessageError::Limit);
+                }
+                e.u8(9)?.bytes(bytes)?;
+            }
         }
         let bytes = e.into_writer();
         if bytes.len() > MAX_MESSAGE_BYTES {
@@ -295,7 +353,7 @@ impl Packet {
         }
         let mut d = Decoder::new(bytes);
         array(&mut d, 3)?;
-        if d.u16()? != 1 {
+        if d.u16()? != crate::domain::PROTOCOL_VERSION {
             return Err(MessageError::Version);
         }
         let packet = match d.u8()? {
@@ -334,6 +392,20 @@ impl Packet {
                     return Err(MessageError::Encoding);
                 }
                 Self::Error
+            }
+            7 => Self::Rotation(crate::governance::RotationOffer::decode(d.bytes()?)?),
+            8 => {
+                if d.u8()? != 0 {
+                    return Err(MessageError::Encoding);
+                }
+                Self::Sync
+            }
+            9 => {
+                let bytes = d.bytes()?;
+                if bytes.len() > crate::membership::MAX_CREDENTIAL {
+                    return Err(MessageError::Limit);
+                }
+                Self::Membership(bytes.to_vec())
             }
             _ => return Err(MessageError::Encoding),
         };

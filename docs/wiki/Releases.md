@@ -9,11 +9,11 @@ make check
 make deb
 ```
 
-Outputs for version 0.4.2:
+Outputs for version 0.5.0:
 
 ```text
-dist/nulllobby_0.4.2_amd64.deb
-dist/nulllobby_0.4.2_x86_64-unknown-linux-gnu.tar.gz
+dist/nulllobby_0.5.0_amd64.deb
+dist/nulllobby_0.5.0_x86_64-unknown-linux-gnu.tar.gz
 dist/SHA256SUMS
 ```
 
@@ -24,7 +24,7 @@ The package stage lives under `target/debian-stage`. No package is installed aut
 Install or upgrade the standard package locally:
 
 ```sh
-sudo apt install ./dist/nulllobby_0.4.2_amd64.deb
+sudo apt install ./dist/nulllobby_0.5.0_amd64.deb
 nulllobby --version
 nulllobby --self-check
 ```
@@ -34,9 +34,9 @@ The experimental package conflicts with the standard package because both instal
 ## Version bumps
 
 ```sh
-make bump-patch  # 0.4.2 -> 0.4.3
-make bump-minor  # 0.4.2 -> 0.5.0
-make bump-major  # 0.4.2 -> 1.0.0
+make bump-patch  # 0.5.0 -> 0.5.1
+make bump-minor  # 0.5.0 -> 0.6.0
+make bump-major  # 0.5.0 -> 1.0.0
 ```
 
 Choose **one** command per intended bump. It updates `[workspace.package].version`, exact internal workspace dependency versions and workspace package versions in Cargo.lock and fuzz/Cargo.lock. Vendored upstream and fuzz-harness package versions are preserved. It does not change registry dependency versions, commit, tag or publish. Lower version components reset for major/minor; invalid levels/overflow fail.
@@ -70,7 +70,7 @@ The `release-notification.yml` workflow runs on a published release, with `discu
 Manual recovery after an unsuccessful workflow:
 
 ```sh
-cargo xtask announce v0.4.2
+cargo xtask announce v0.5.0
 ```
 
 Run from the checked-out release commit with authenticated `gh`. Release-body data is passed as structured command arguments, not shell code. Do not put secrets into release notes, source fixtures or package metadata. Changing feature maturity requires updating the notes before the release.

@@ -1,6 +1,7 @@
 //! Application orchestration. Clients send commands and render events; all networking lives here.
 #![forbid(unsafe_code)]
 pub mod command;
+pub mod organization;
 mod room;
 
 use nulllobby_core::{
@@ -57,6 +58,7 @@ impl NetworkObserver for ArtiProgress {
 pub use nulllobby_tor::arti::ArtiConfig as ArtiOptions;
 #[derive(Clone)]
 pub struct Config {
+    pub vault: Option<Arc<nulllobby_store::Vault>>,
     pub direct: DirectConfig,
     pub tor: TorConfig,
     #[cfg(feature = "tor-arti-experimental")]
@@ -68,6 +70,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
+            vault: None,
             direct: DirectConfig::default(),
             tor: TorConfig::default(),
             #[cfg(feature = "tor-arti-experimental")]
@@ -173,10 +176,18 @@ impl App {
         kind: LobbyKind,
         card: Option<LobbyCard>,
     ) -> Result<(), &'static str> {
+        let created = card.is_none();
         if self.rooms.len() >= 16 {
             return Err("Maximum 16 lobbies");
         }
         if let Some(card) = &card {
+            if let Some(vault) = &self.config.vault
+                && vault
+                    .retired(card.lobby_id())
+                    .map_err(|_| "Vault state unavailable")?
+            {
+                return Err("This capability was retired; obtain the replacement invitation");
+            }
             if card.transport() != self.config.mode {
                 return Err(
                     "Card uses another transport; leave all lobbies and select the matching transport first",
@@ -297,6 +308,7 @@ impl App {
         let (tx, rx) = mpsc::channel(32);
         let room = room::Room::new(
             room::Start {
+                created,
                 card,
                 name,
                 nickname: self.nickname.clone(),
@@ -308,7 +320,8 @@ impl App {
             },
             self.room_tx.clone(),
             rx,
-        )?;
+        )
+        .await?;
         self.rooms.push(Lobby {
             id,
             commands: tx,
@@ -316,7 +329,7 @@ impl App {
         });
         self.current = Some(id);
         self.workers.spawn(room.run());
-        self.notice("Lobby identity is ephemeral. Compare complete fingerprints out of band before /verify. Trust and history disappear on exit.").await;
+        self.notice("Compare complete fingerprints out of band before /verify. Trust stays in RAM. Persistence and delivery settings are shown in /privacy.").await;
         Ok(())
     }
     async fn inspect(&self, inspection: Inspection) {
@@ -363,6 +376,9 @@ impl App {
                                 }
                             ))
                             .await;
+                            if let Some(organization) = &member.organization {
+                                self.notice(format!("Organization attestation: {organization}; separate from human verification")).await;
+                            }
                         }
                     }
                 }
@@ -387,11 +403,17 @@ impl App {
                     #[cfg(not(feature = "tor-arti-experimental"))]
                     self.notice("Backend: external Tor. SOCKS isolation is requested per lobby; configure IsolateSOCKSAuth explicitly.").await;
                 }
-                self.notice("History, identities and trust: RAM only. No professional security audit completed. Authorized lobby recipients can read messages. Terminal scrollback, kernel compromise and physical memory are outside this boundary.").await;
+                self.notice("RAM-only by default. Per-lobby identity, durable outbox and peer mailbox storage require explicit opt-in to an encrypted vault. Trust stays in RAM. No professional security audit completed. Authorized recipients can read messages; terminal scrollback and compromised endpoints are outside this boundary.").await;
+                if let Some(vault) = &self.config.vault {
+                    match vault.memory_status() {
+                        Ok(status)=>self.notice(format!("Encrypted vault key memory lock: {status:?}; Noise internals and storage temporaries are not all locked")).await,
+                        Err(_)=>self.notice("Encrypted vault state unavailable").await,
+                    }
+                }
                 if let Some(room) = room {
                     self.notice(format!(
-                        "{} | peers: {} | memory locks: {:?} | identity: ephemeral, lobby scoped",
-                        room.status, room.peers, room.memory
+                        "{} | peers: {} | identity memory locks: {:?} | persistent identity: {} | durable sending: {} | mailbox: {} | private administrator: {} | lobby scoped",
+                        room.status, room.peers, room.memory, room.persistent, room.durable, room.mailbox,room.administrator
                     ))
                     .await;
                     self.notice(if room.kind == LobbyKind::Private {
@@ -505,6 +527,76 @@ impl App {
                 self.current.ok_or("Join a lobby first")?,
                 room::Command::Reconnect,
             )?,
+            AppCommand::PersistIdentity(on) => self.send(
+                self.current.ok_or("Join a lobby first")?,
+                room::Command::Persist(on),
+            )?,
+            AppCommand::DurableDelivery(on) => self.send(
+                self.current.ok_or("Join a lobby first")?,
+                room::Command::Durable(on),
+            )?,
+            AppCommand::Mailbox(on) => self.send(
+                self.current.ok_or("Join a lobby first")?,
+                room::Command::Mailbox(on),
+            )?,
+            AppCommand::SyncMailbox => self.send(
+                self.current.ok_or("Join a lobby first")?,
+                room::Command::Sync,
+            )?,
+            AppCommand::RotatePrivate(exclude) => self.send(
+                self.current.ok_or("Join a lobby first")?,
+                room::Command::Rotate(exclude),
+            )?,
+            AppCommand::OrganizationTrust(issuer) => self.send(
+                self.current.ok_or("Join a lobby first")?,
+                room::Command::OrgTrust(issuer),
+            )?,
+            AppCommand::OrganizationRequest(path) => self.send(
+                self.current.ok_or("Join a lobby first")?,
+                room::Command::OrgRequest(path),
+            )?,
+            AppCommand::OrganizationImport(path) => self.send(
+                self.current.ok_or("Join a lobby first")?,
+                room::Command::OrgImport(path),
+            )?,
+            AppCommand::StoredLobbies => {
+                let vault = self
+                    .config
+                    .vault
+                    .clone()
+                    .ok_or("Open an encrypted --vault first")?;
+                let profiles = tokio::task::spawn_blocking(move || vault.profiles())
+                    .await
+                    .map_err(|_| "Vault worker failed")?
+                    .map_err(|_| "Vault unavailable")?;
+                for (index, (_, name)) in profiles.iter().enumerate() {
+                    self.notice(format!("{}: {}", index + 1, name)).await;
+                }
+                if profiles.is_empty() {
+                    self.notice("No saved lobby identities").await;
+                }
+            }
+            AppCommand::ResumeLobby(index) => {
+                let vault = self
+                    .config
+                    .vault
+                    .clone()
+                    .ok_or("Open an encrypted --vault first")?;
+                let (card, name) = tokio::task::spawn_blocking(move || {
+                    let profiles = vault.profiles()?;
+                    let (id, name) = profiles.get(index).ok_or(nulllobby_store::Error::Missing)?;
+                    Ok::<_, nulllobby_store::Error>((vault.card(*id)?, name.clone()))
+                })
+                .await
+                .map_err(|_| "Vault worker failed")?
+                .map_err(|_| "Stored lobby unavailable")?;
+                self.open(
+                    LobbyName::new(&name).map_err(|_| "Invalid stored name")?,
+                    card.kind(),
+                    Some(card),
+                )
+                .await?;
+            }
             AppCommand::Shutdown => return Ok(false),
         }
         self.view().await;
@@ -515,6 +607,45 @@ impl App {
     }
     async fn room_event(&mut self, event: room::Event) {
         match event {
+            room::Event::PrepareRotation { old, name } => {
+                let listen = self.config.direct.listen;
+                self.config.direct.listen.set_port(0);
+                let result = self.open(name, LobbyKind::Private, None).await;
+                self.config.direct.listen = listen;
+                match result {
+                    Ok(()) => {
+                        if let Some(id) = self.current {
+                            let _ = self.send(id, room::Command::RotationExport(old));
+                        }
+                    }
+                    Err(error) => {
+                        let _ = self.send(old, room::Command::RotationFailed);
+                        self.notice(error).await;
+                    }
+                }
+            }
+            room::Event::RotationReady { old, card } => {
+                if let Err(error) = self.send(old, room::Command::RotationReady(card)) {
+                    self.notice(error).await;
+                }
+            }
+            room::Event::FollowRotation { old, card } => {
+                let _ = self.send(old, room::Command::Stop);
+                let listen = self.config.direct.listen;
+                self.config.direct.listen.set_port(0);
+                let result = self
+                    .open(
+                        LobbyName::new("Joining lobby").expect("valid"),
+                        LobbyKind::Private,
+                        Some(card),
+                    )
+                    .await;
+                self.config.direct.listen = listen;
+                if let Err(error) = result {
+                    self.notice(error).await;
+                    self.notice("Rotation join failed; old capability remains retired. Obtain a fresh invite. No transport fallback.").await;
+                }
+            }
             room::Event::Ui(event) => {
                 let _ = self.events.send(event).await;
             }

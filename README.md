@@ -20,7 +20,9 @@
 
 **Direct mode provides confidentiality, NOT network anonymity.** **Tor mode uses onion-service transport to hide peer IP addresses from other lobby participants.** Tor never falls back to Direct. A sufficiently capable observer can still correlate traffic; ordinary Tor usage may be observable to the local network.
 
-The application is **RAM-first/RAM-only for its own identity, trust and history state in v1**. Restarting creates new fingerprints and loses verification and history. **No independent professional security audit has yet been completed.** This is an experimental Linux preview; review the threat model before sensitive use.
+The application remains **RAM-only by default**. Its v1 design kept all identity, trust and history state in RAM; 0.5.0 adds separate, explicit per-lobby choices for encrypted identity storage, durable sending and peer mailboxes. Unsaved identities change on restart; human fingerprint verification always stays in RAM. **No independent professional security audit has yet been completed.** This is an experimental Linux preview; review the threat model before sensitive use.
+
+**0.5.0 uses protocol/card v2.** All participants must upgrade and exchange fresh cards. Older cards and peers are rejected; there is no compatibility downgrade.
 
 ## Install from APT
 
@@ -78,11 +80,29 @@ F1 opens help, F2/F3 toggle sidebars, F4 opens settings, F6 previews pasted bloc
 
 Use `/theme ember`, load a native palette, or import irssi colors/styles directly with `/theme /path/to/favorite.theme`. The importer supports 16/256/RGB colors and common styles; IRC templates and layouts are not reproduced. See the [terminal/theme guide](docs/wiki/Terminal.md).
 
-Remembered nicknames, public cards and autoconnect are **opt-in**. Keys, trust, private invites and history stay in RAM. Reused nicknames/cards can correlate activity. Welcome dismissal persists only with settings enabled; `--no-welcome` skips it.
+Remembered nicknames, public cards and autoconnect are **opt-in**. That settings file never stores keys or private capabilities; optional secret storage uses a separate encrypted vault. Reused nicknames/cards can correlate activity. Welcome dismissal persists only with settings enabled; `--no-welcome` skips it.
 
 Headless [bots](docs/wiki/Bots.md) support local models and explicitly enabled OpenAI/Claude APIs. Only addressed prompts reach the provider. Cloud providers are disabled in Tor mode.
 
 ![Full-screen settings with the ember palette](assets/screenshots/settings.png)
+
+## Optional team features in 0.5.0
+
+- `/rotate` creates a fresh private capability and lobby; `/revoke <full fingerprint>` excludes that identity from the replacement offers. Only the creator's pinned lobby key can rotate. Retained connected neighbors must be explicitly fingerprint-verified before receiving individual encrypted offers; offline/indirect participants need a fresh invite.
+- `/identity persistent` saves only the selected lobby's signing identity and card in an explicitly opened encrypted vault. Noise keys and onion services remain ephemeral. `/identity ephemeral` removes that saved state.
+- `/delivery durable` enables an encrypted sender outbox; `/mailbox on` separately opts a participant into retaining durable messages for up to 24 hours. `/sync` requests bounded replay. Live messages are never intentionally stored. A reachable holder and a reachable seed are required.
+- `/org trust`, `/org request` and `/org import` support optional, short-lived, lobby-scoped organization credentials from a dedicated offline issuer. These are separate from human verification, private-lobby admission and release signing. No CA network lookup occurs.
+
+Linux vaults require an unlocked Secret Service and `libsecret-tools`. For example:
+
+```sh
+nulllobby --vault-init "$HOME/.local/share/nulllobby/state.vault"
+nulllobby --vault "$HOME/.local/share/nulllobby/state.vault"
+```
+
+Opening a vault saves no lobby automatically. See [storage and delivery](docs/wiki/Storage-and-Delivery.md), [rotation](docs/wiki/Private-Lobbies.md), [organization membership](docs/wiki/Organization.md) and the [separate privacy designs](docs/0.5-DESIGN.md).
+
+![Optional durable delivery and organization labels with synthetic content](assets/screenshots/delivery.png)
 
 ## Direct and Tor
 
@@ -120,6 +140,7 @@ apps/nulllobby-tui          Ratatui/Crossterm presentation and input
 crates/nulllobby-app        Bounded command/event runtime and lobby workers
 crates/nulllobby-bot        Addressed, bounded local/cloud model bots
 crates/nulllobby-core       Identities, Noise, signed CBOR, replay, cards and trust
+crates/nulllobby-store      Opt-in encrypted vault, bounded outbox/mailbox, OS keyring
 crates/nulllobby-transport  Async byte streams, framing, limits and network policy
 crates/nulllobby-direct     BitTorrent, BEP 10 and bounded BEP 5 discovery
 crates/nulllobby-tor        SAFECOOKIE ControlPort, onion-only SOCKS, ephemeral services
@@ -162,7 +183,7 @@ Release signing uses a dedicated Ed25519 OpenPGP key in [XXC Trust](https://ca.x
 
 APT uses a separate archive signing key. The [APT publishing guide](docs/wiki/APT.md) covers scoped credentials, the private management endpoint, shared-suite review and public download verification.
 
-OpenPGP release signatures are separate from lobby identities. Chat continues to use Noise and ephemeral per-lobby Ed25519 keys. An [opt-in organization identity design](docs/ORGANIZATION-IDENTITY.md) is documented for review; it is not implemented in the application.
+OpenPGP release signatures are separate from lobby identities. Chat continues to use Noise and independent per-lobby Ed25519 keys. [Optional organization membership](docs/ORGANIZATION-IDENTITY.md) uses a dedicated offline COSE issuer; live XXC membership enrollment and required-membership admission remain future work.
 
 ## Documentation and contribution
 

@@ -19,6 +19,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "aead"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1973cfbc1a2daf9cf550e74e1f088c28e7f7d8c1e1418fb6c9dc5184b7e84c99"
+dependencies = [
+ "crypto-common 0.2.2",
+ "inout 0.2.2",
+]
+
+[[package]]
 name = "aes"
 version = "0.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -499,8 +509,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "65c35e4b699c7e15ccbe7ee35c005e4fc0a278d22238a2857e6ce2dadeda1b06"
 dependencies = [
  "cfg-if",
+ "cipher 0.5.2",
  "cpufeatures 0.3.1",
  "rand_core 0.10.1",
+ "zeroize",
 ]
 
 [[package]]
@@ -509,10 +521,23 @@ version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "10cd79432192d1c0f4e1a0fef9527696cc039165d729fb41b3f4f4f354c2dc35"
 dependencies = [
- "aead",
+ "aead 0.5.2",
  "chacha20 0.9.1",
  "cipher 0.4.4",
- "poly1305",
+ "poly1305 0.8.0",
+ "zeroize",
+]
+
+[[package]]
+name = "chacha20poly1305"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9b89e1c441e926b9c82a8d023f6e1b7ae0adcfaa7d621814e4d60789bac751cb"
+dependencies = [
+ "aead 0.6.1",
+ "chacha20 0.10.2",
+ "cipher 0.5.2",
+ "poly1305 0.9.1",
  "zeroize",
 ]
 
@@ -2655,13 +2680,15 @@ dependencies = [
 
 [[package]]
 name = "nulllobby-app"
-version = "0.4.2"
+version = "0.5.0"
 dependencies = [
  "getrandom 0.4.3",
  "hmac 0.13.0",
+ "libc",
  "nulllobby-core",
  "nulllobby-direct",
  "nulllobby-platform",
+ "nulllobby-store",
  "nulllobby-tor",
  "nulllobby-transport",
  "secrecy",
@@ -2672,7 +2699,7 @@ dependencies = [
 
 [[package]]
 name = "nulllobby-bot"
-version = "0.4.2"
+version = "0.5.0"
 dependencies = [
  "nulllobby-app",
  "nulllobby-core",
@@ -2687,7 +2714,7 @@ dependencies = [
 
 [[package]]
 name = "nulllobby-core"
-version = "0.4.2"
+version = "0.5.0"
 dependencies = [
  "base64",
  "ed25519-dalek 3.0.0",
@@ -2709,7 +2736,7 @@ dependencies = [
 
 [[package]]
 name = "nulllobby-direct"
-version = "0.4.2"
+version = "0.5.0"
 dependencies = [
  "bendy",
  "getrandom 0.4.3",
@@ -2721,7 +2748,7 @@ dependencies = [
 
 [[package]]
 name = "nulllobby-platform"
-version = "0.4.2"
+version = "0.5.0"
 dependencies = [
  "libc",
  "secrecy",
@@ -2729,8 +2756,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "nulllobby-store"
+version = "0.5.0"
+dependencies = [
+ "chacha20poly1305 0.11.0",
+ "getrandom 0.4.3",
+ "libc",
+ "minicbor",
+ "nulllobby-core",
+ "nulllobby-platform",
+ "secrecy",
+ "sha2 0.11.0",
+ "thiserror 2.0.21",
+ "zeroize",
+]
+
+[[package]]
 name = "nulllobby-tor"
-version = "0.4.2"
+version = "0.5.0"
 dependencies = [
  "arti-client",
  "data-encoding",
@@ -2757,7 +2800,7 @@ dependencies = [
 
 [[package]]
 name = "nulllobby-transport"
-version = "0.4.2"
+version = "0.5.0"
 dependencies = [
  "thiserror 2.0.21",
  "tokio",
@@ -2765,7 +2808,7 @@ dependencies = [
 
 [[package]]
 name = "nulllobby-tui"
-version = "0.4.2"
+version = "0.5.0"
 dependencies = [
  "base64",
  "chrono",
@@ -3171,6 +3214,16 @@ dependencies = [
  "cpufeatures 0.2.17",
  "opaque-debug",
  "universal-hash 0.5.1",
+]
+
+[[package]]
+name = "poly1305"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6e2d0073b297041425c7c3df6eb4792d598a15323fe63346852b092eca02904c"
+dependencies = [
+ "cpufeatures 0.3.1",
+ "universal-hash 0.6.1",
 ]
 
 [[package]]
@@ -4242,7 +4295,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "599b506ccc4aff8cf7844bc42cf783009a434c1e26c964432560fb6d6ad02d82"
 dependencies = [
  "blake2",
- "chacha20poly1305",
+ "chacha20poly1305 0.10.1",
  "curve25519-dalek 4.1.3",
  "getrandom 0.3.4",
  "rustc_version",
@@ -6631,7 +6684,7 @@ dependencies = [
 
 [[package]]
 name = "xtask"
-version = "0.4.2"
+version = "0.5.0"
 dependencies = [
  "base64",
  "getrandom 0.4.3",

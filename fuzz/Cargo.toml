@@ -9,6 +9,9 @@ cargo-fuzz = true
 [patch.crates-io]
 tor-hsservice = { path = "../vendor/tor-hsservice" }
 [dependencies]
+minicbor = { version = "2.3.0", features = ["std"] }
+secrecy = "0.10.3"
+nulllobby-store = { path = "../crates/nulllobby-store", features = ["fuzzing"] }
 libfuzzer-sys = "0.4.13"
 nulllobby-core = { path = "../crates/nulllobby-core" }
 nulllobby-direct = { path = "../crates/nulllobby-direct" }
@@ -67,6 +70,25 @@ bench = false
 [[bin]]
 name = "terminal"
 path = "fuzz_targets/terminal.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "rotation"
+path = "fuzz_targets/rotation.rs"
+test = false
+doc = false
+bench = false
+[[bin]]
+name = "membership"
+path = "fuzz_targets/membership.rs"
+test = false
+doc = false
+bench = false
+[[bin]]
+name = "vault"
+path = "fuzz_targets/vault.rs"
 test = false
 doc = false
 bench = false

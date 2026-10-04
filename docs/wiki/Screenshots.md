@@ -26,6 +26,12 @@ Help covers the underlying panels and explains commands without adding messages 
 
 ![Help](https://raw.githubusercontent.com/kawaiipantsu/nulllobby/main/assets/screenshots/help.png)
 
+## Optional durable delivery and organization labels
+
+This synthetic example enables persistent identity, durable sending and a peer mailbox. The stored receipt is distinct from human trust and the optional organization label.
+
+![Durable delivery and organization status](https://raw.githubusercontent.com/kawaiipantsu/nulllobby/main/assets/screenshots/delivery.png)
+
 ## Regenerate
 
 Install Rust, librsvg's `rsvg-convert` and DejaVu Sans Mono (Debian packages `librsvg2-bin fonts-dejavu-core`), then run:

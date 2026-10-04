@@ -38,11 +38,11 @@ Before discoverable create/join, show: `WARNING: discoverable lobbies can be enu
 
 Public encryption does not prove that a first-seen key belongs to a named person. Show `encrypted / unverified` until users compare the **full fingerprint** out of band and explicitly verify it for this lobby. Then show `encrypted / verified`. Nicknames are cosmetic.
 
-## RAM-only application state
+## RAM-only defaults and explicit storage
 
-Independent per-lobby Ed25519 seeds and Noise static material are generated afresh. Restart means new fingerprints. Trust, history, private invitations and identity secrets disappear at exit.
+Independent per-lobby Ed25519 seeds and Noise static material are generated afresh by default. Unsaved fingerprints change on restart. Trust and live chat remain in RAM. Explicitly opened encrypted vaults can save individually selected lobby signing identities/cards and separately enabled durable outbox/mailbox records. Saved fingerprints correlate sessions within that lobby; they do not become a global public identity. Noise keys and onion services remain fresh. See [Storage and delivery](Storage-and-Delivery).
 
-Optional remembered preferences save a nickname, appearance settings and explicitly selected public lobby cards/seeds with autoconnect flags. Defaults write none of this. Saved metadata can correlate activity even though keys rotate. Private capabilities cannot be saved. See the Terminal guide for opting in, deleting preferences and first-start behavior.
+Optional remembered preferences save a nickname, appearance settings and explicitly selected public lobby cards/seeds with autoconnect flags. Defaults write none of this. Saved metadata can correlate activity even though keys rotate. Private capabilities cannot enter the public preferences file; only the separate encrypted vault can retain them after explicit identity-persistence opt-in. See the Terminal guide for opting in, deleting preferences and first-start behavior.
 
 Optional bots send only explicitly addressed prompts to the selected provider. Cloud APIs require explicit opt-in and are disabled in Tor mode. Local loopback models are supported; the model service's own retention/network behavior is outside NullLobby. See the Bots guide.
 

@@ -31,16 +31,19 @@ fn render_documentation() {
             nickname: "demo-you".into(),
             fingerprint: own,
             verified: false,
+            organization: None,
         },
         MemberView {
             nickname: "demo-scout".into(),
             fingerprint: peer,
             verified: true,
+            organization: None,
         },
         MemberView {
             nickname: "demo-helper[bot]".into(),
             fingerprint: visitor,
             verified: false,
+            organization: None,
         },
     ];
     state.current = Some(id);
@@ -54,6 +57,10 @@ fn render_documentation() {
             members,
             fingerprint: own,
             memory: [HardeningStatus::Active; 2],
+            persistent: false,
+            durable: false,
+            mailbox: false,
+            administrator: false,
             status: "Connected · synthetic documentation preview".into(),
         },
         LobbyView {
@@ -64,6 +71,10 @@ fn render_documentation() {
             members: vec![],
             fingerprint: Fingerprint::of_public_key(&[4; 32]),
             memory: [HardeningStatus::Active; 2],
+            persistent: false,
+            durable: false,
+            mailbox: false,
+            administrator: false,
             status: "Listening".into(),
         },
     ];
@@ -100,6 +111,8 @@ fn render_documentation() {
         ),
     ] {
         state.event(AppEvent::MessageReceived {
+            id: [0; 16],
+            historical: false,
             lobby: id,
             fingerprint,
             nickname: nickname.into(),
@@ -136,6 +149,34 @@ fn render_documentation() {
     state.settings.theme = "null".into();
     state.open(Modal::Help);
     capture(&state, &output.join("help.svg"));
+    state.modal = None;
+    state.mode = TransportKind::Tor;
+    state.lobbies[0].persistent = true;
+    state.lobbies[0].durable = true;
+    state.lobbies[0].mailbox = true;
+    state.lobbies[0].members[1].organization = Some("Synthetic Team / member".into());
+    state.event(AppEvent::MessageReceived {
+        lobby: id,
+        id: [9; 16],
+        historical: true,
+        fingerprint: own,
+        nickname: "demo-you".into(),
+        body:
+            "Synthetic durable update: available from an opted-in peer mailbox for up to 24 hours."
+                .into(),
+        verified: false,
+    });
+    state.event(AppEvent::Delivery {
+        lobby: id,
+        id: [9; 16],
+        state: nulllobby_core::domain::DeliveryState::Stored(peer),
+    });
+    if let Some(Record::Message { time, .. }) =
+        state.history.get_mut(&id).unwrap().records.back_mut()
+    {
+        *time = "19:25:00".into();
+    }
+    capture(&state, &output.join("delivery.svg"));
 }
 fn capture(state: &State, path: &std::path::Path) {
     let mut terminal = Terminal::new(TestBackend::new(140, 32)).unwrap();

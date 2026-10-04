@@ -81,7 +81,7 @@ async fn addressed_prompt_only_crosses_provider_boundary_and_reply_is_signed_cha
         let text = std::str::from_utf8(&payload).unwrap();
         assert!(!text.contains("unaddressed-canary"));
         assert!(!text.contains("private-lobby-canary"));
-        assert!(!text.contains("nl:v1"));
+        assert!(!text.contains("nl:"));
         let json: serde_json::Value = serde_json::from_slice(&payload).unwrap();
         assert_eq!(json["messages"][1]["content"], "synthetic request");
         assert_eq!(json["messages"].as_array().unwrap().len(), 2);
@@ -108,7 +108,38 @@ async fn addressed_prompt_only_crosses_provider_boundary_and_reply_is_signed_cha
             break LobbyCard::parse(card.expose_secret()).unwrap();
         }
     };
-    let (commands, bot_events, app_task) = client();
+    let (commands, mut actual_events, app_task) = client();
+    let (relay_tx, bot_events) = mpsc::channel(128);
+    let relay = tokio::spawn(async move {
+        while let Some(event) = actual_events.recv().await {
+            if let AppEvent::MessageReceived {
+                lobby,
+                fingerprint,
+                body,
+                ..
+            } = &event
+                && body == "unaddressed-canary"
+            {
+                // A mailbox replay can arrive immediately after joining. Even
+                // an addressed replay must never trigger a provider request.
+                relay_tx
+                    .send(AppEvent::MessageReceived {
+                        lobby: *lobby,
+                        fingerprint: *fingerprint,
+                        nickname: "synthetic".into(),
+                        body: "@helper durable replay must stay local".into(),
+                        verified: false,
+                        id: [5; 16],
+                        historical: true,
+                    })
+                    .await
+                    .unwrap();
+            }
+            if relay_tx.send(event).await.is_err() {
+                break;
+            }
+        }
+    });
     let stop = commands.clone();
     let provider = Provider::new(
         Options {
@@ -152,6 +183,7 @@ async fn addressed_prompt_only_crosses_provider_boundary_and_reply_is_signed_cha
     stop.send(AppCommand::Shutdown).await.unwrap();
     bot_task.await.unwrap().unwrap();
     app_task.await.unwrap();
+    relay.await.unwrap();
     human.send(AppCommand::Shutdown).await.unwrap();
     while !matches!(event(&mut events).await, AppEvent::ShutdownComplete) {}
     human_task.await.unwrap();

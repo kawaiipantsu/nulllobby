@@ -1,10 +1,11 @@
 # Dependency review
 
-Reviewed on 2026-10-03 using current Cargo registry releases, downloaded source APIs, upstream protocol documentation and RustSec. The lockfiles specify exact graphs. A clean advisory scan is not proof of correctness or an independent application audit.
+Updated on 2026-10-04 using current Cargo registry releases, downloaded source APIs, upstream protocol documentation and RustSec. The lockfiles specify exact graphs. A clean advisory scan is not proof of correctness or an independent application audit.
 
 | Dependency | Selected | Review |
 |---|---|---|
 | tokio | 1.53.2 | Bounded channels, runtime, TCP/UDP, deadlines and local cookie-file read. No unbounded Tokio channels |
+| chacha20poly1305 | 0.11.0 | RustCrypto XChaCha20-Poly1305 for opt-in vault storage; alloc/zeroize only, fresh OS nonces, authenticated headers; separate from the existing Noise suite |
 | snow | 0.10.0 | Exact XX and XXpsk3/25519/ChaChaPoly/BLAKE2s patterns verified against parser/build APIs and upstream vectors; both exercised by tests. Only required algorithms enabled |
 | ed25519-dalek | 3.0.0 | Independent signing seeds, strict verification, weak-key rejection; zeroize enabled |
 | x25519-dalek | 3.0.0 | Static public-key derivation and zeroizing secret type; actual key checked against Noise |
@@ -48,3 +49,11 @@ The bot adds reqwest 0.13.5 with reduced Rustls features and the maintained plat
 `cargo audit` and `cargo deny check` scan the locked application graph. Duplicate versions arise from upstream crypto/proc-macro/TUI constraints and are warnings, not suppressed advisories. The license allowlist includes the existing project/crypto/TUI licenses and the reviewed Arti additions documented in ARTI-DEPENDENCIES.md; see `deny.toml` for exact identifiers. Fuzz-only libFuzzer additionally uses NCSA; it is outside shipped binaries. Rust packaging bundles the actual target's dependency license texts.
 
 Primary upstreams: [Snow](https://github.com/mcginty/snow), [Dalek](https://github.com/dalek-cryptography/curve25519-dalek), [RustCrypto](https://github.com/RustCrypto), [Tokio](https://github.com/tokio-rs/tokio), [mainline](https://github.com/pubky/mainline), [minicbor](https://github.com/twittner/minicbor), [bendy](https://github.com/P3KI/bendy), [Ratatui](https://github.com/ratatui/ratatui), [RustSec](https://rustsec.org/).
+
+## 0.5.0 storage and organization additions
+
+[RustCrypto chacha20poly1305 0.11.0](https://docs.rs/chacha20poly1305/0.11.0/chacha20poly1305/) adds XChaCha20-Poly1305 for vault files. The application provides OS entropy; default features are disabled and only allocation/zeroization are enabled. The existing Noise suite still uses snow's selected cipher implementation; no network cipher was changed or downgraded. Root and fuzz lockfiles pin the new AEAD dependency graph. No extra RustSec exception was added for storage.
+
+Production vault keys use the small [GNOME libsecret secret-tool interface](https://github.com/GNOME/libsecret/blob/main/tool/secret-tool.c) to the OS Secret Service. The process uses a fixed executable, random opaque lookup attributes, key material on stdin/stdout only, bounded output, a 30-second deadline and suppressed provider diagnostics. No key enters argv, logs, preferences, packages or a fallback file. Synthetic tests exercise a real isolated DBus/GNOME keyring. A provider's unlock/password configuration remains the operator's responsibility.
+
+The bounded organization profile uses existing maintained minicbor/ed25519-dalek with [COSE RFC 9052](https://www.rfc-editor.org/rfc/rfc9052.html) and the fully specified [Ed25519 algorithm in RFC 9864](https://www.rfc-editor.org/rfc/rfc9864.html). No general X.509 or OpenPGP implementation was added to chat, and no service API is invented for XXC membership issuance.

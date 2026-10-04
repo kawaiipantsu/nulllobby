@@ -14,10 +14,12 @@ nulllobby-core.workspace = true
 nulllobby-direct.workspace = true
 nulllobby-transport.workspace = true
 nulllobby-platform.workspace = true
+nulllobby-store.workspace = true
 nulllobby-tor.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time", "net", "signal"] }
 secrecy.workspace = true
 zeroize.workspace = true
+libc.workspace = true
 
 [lints]
 workspace = true

@@ -12,7 +12,7 @@ use std::{
 use zeroize::Zeroizing;
 
 const MAGIC: &[u8; 3] = b"NLC";
-const VERSION: u8 = 1;
+const VERSION: u8 = 2;
 const CHECKSUM_DOMAIN: &[u8] = b"nulllobby.card-checksum.v1";
 
 pub struct LobbyCard {
@@ -21,6 +21,7 @@ pub struct LobbyCard {
     lobby: LobbyId,
     secret: Option<PrivateLobbySecret>,
     seeds: Vec<Endpoint>,
+    administrator: Option<[u8; 32]>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -138,6 +139,7 @@ impl LobbyCard {
             lobby,
             secret,
             seeds,
+            administrator: None,
         })
     }
     pub fn lobby_id(&self) -> LobbyId {
@@ -152,6 +154,19 @@ impl LobbyCard {
     pub fn seeds(&self) -> &[Endpoint] {
         &self.seeds
     }
+    pub fn administrator(&self) -> Option<[u8; 32]> {
+        self.administrator
+    }
+    pub fn set_administrator(&mut self, key: [u8; 32]) -> Result<(), CardError> {
+        if self.kind != LobbyKind::Private
+            || self.administrator.is_some()
+            || ed25519_dalek::VerifyingKey::from_bytes(&key).map_or(true, |k| k.is_weak())
+        {
+            return Err(CardError::Inconsistent);
+        }
+        self.administrator = Some(key);
+        Ok(())
+    }
     pub fn private_keys(&self) -> Result<Option<crate::secret::PrivateLobbyKeys>, SecretError> {
         self.secret
             .as_ref()
@@ -160,11 +175,11 @@ impl LobbyCard {
     }
     fn prefix(&self) -> &'static str {
         match (self.transport, self.kind) {
-            (TransportKind::Direct, LobbyKind::PublicUnlisted) => "nl:v1:direct-public:",
-            (TransportKind::Direct, LobbyKind::Private) => "nl:v1:direct-private:",
-            (TransportKind::Tor, LobbyKind::PublicUnlisted) => "nl:v1:tor-public:",
-            (TransportKind::Tor, LobbyKind::Private) => "nl:v1:tor-private:",
-            (TransportKind::Direct, LobbyKind::PublicDiscoverable) => "nl:v1:direct-discoverable:",
+            (TransportKind::Direct, LobbyKind::PublicUnlisted) => "nl:v2:direct-public:",
+            (TransportKind::Direct, LobbyKind::Private) => "nl:v2:direct-private:",
+            (TransportKind::Tor, LobbyKind::PublicUnlisted) => "nl:v2:tor-public:",
+            (TransportKind::Tor, LobbyKind::Private) => "nl:v2:tor-private:",
+            (TransportKind::Direct, LobbyKind::PublicDiscoverable) => "nl:v2:direct-discoverable:",
             (TransportKind::Tor, LobbyKind::PublicDiscoverable) => {
                 unreachable!("validated card kind")
             }
@@ -203,6 +218,10 @@ impl LobbyCard {
                 }
             }
         }
+        bytes.push(u8::from(self.administrator.is_some()));
+        if let Some(key) = self.administrator {
+            bytes.extend_from_slice(&key);
+        }
         let checksum = checksum(&bytes);
         bytes.extend_from_slice(&checksum);
         let mut output = Zeroizing::new(String::with_capacity(limits::CARD_TEXT_BYTES));
@@ -217,7 +236,7 @@ impl LobbyCard {
             return Err(CardError::Limit);
         }
         let mut parts = input.splitn(4, ':');
-        if parts.next() != Some("nl") || parts.next() != Some("v1") {
+        if parts.next() != Some("nl") || parts.next() != Some("v2") {
             return Err(CardError::Unsupported);
         }
         let label = parts.next().ok_or(CardError::Malformed)?;
@@ -289,10 +308,18 @@ impl LobbyCard {
             };
             seeds.push(seed);
         }
+        let administrator = match reader.byte()? {
+            0 => None,
+            1 => Some(reader.array()?),
+            _ => return Err(CardError::Malformed),
+        };
         if reader.offset != reader.bytes.len() {
             return Err(CardError::Malformed);
         }
-        let card = Self::checked(transport, kind, lobby, secret, seeds)?;
+        let mut card = Self::checked(transport, kind, lobby, secret, seeds)?;
+        if let Some(key) = administrator {
+            card.set_administrator(key)?;
+        }
         if card.prefix().split(':').nth(2) != Some(label) {
             return Err(CardError::Inconsistent);
         }
@@ -445,7 +472,7 @@ mod tests {
         assert!(LobbyCard::parse(extra.expose_secret()).is_err());
         let port_zero = mutate(&card, |bytes| {
             let end = bytes.len();
-            bytes[end - 2..].fill(0);
+            bytes[end - 3..end - 1].fill(0); // Port precedes the administrator flag.
         });
         assert!(LobbyCard::parse(port_zero.expose_secret()).is_err());
     }
@@ -498,7 +525,7 @@ mod tests {
     fn arbitrary_short_inputs_do_not_panic() {
         for byte in 0..=255u8 {
             let input = format!(
-                "nl:v1:direct-public:{}",
+                "nl:v2:direct-public:{}",
                 URL_SAFE_NO_PAD.encode([byte; 128])
             );
             assert!(LobbyCard::parse(&input).is_err());

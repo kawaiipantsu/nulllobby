@@ -2,7 +2,7 @@ use crate::{SecretError, limits, text::ValidatedText};
 use nulllobby_transport::TransportKind;
 use std::collections::BTreeSet;
 
-pub const PROTOCOL_VERSION: u16 = 1;
+pub const PROTOCOL_VERSION: u16 = 2;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct LobbyId([u8; 32]);
@@ -100,6 +100,16 @@ pub enum AppCommand {
     ExportInvite,
     ConfirmDiscoverable,
     Reconnect,
+    PersistIdentity(bool),
+    DurableDelivery(bool),
+    Mailbox(bool),
+    SyncMailbox,
+    StoredLobbies,
+    ResumeLobby(usize),
+    RotatePrivate(Option<crate::Fingerprint>),
+    OrganizationTrust(Option<[u8; 32]>),
+    OrganizationRequest(std::path::PathBuf),
+    OrganizationImport(std::path::PathBuf),
     Shutdown,
 }
 
@@ -121,6 +131,7 @@ pub struct MemberView {
     pub nickname: String,
     pub fingerprint: crate::Fingerprint,
     pub verified: bool,
+    pub organization: Option<String>,
 }
 #[derive(Clone)]
 pub struct LobbyView {
@@ -132,6 +143,20 @@ pub struct LobbyView {
     pub fingerprint: crate::Fingerprint,
     pub memory: [nulllobby_platform::HardeningStatus; 2],
     pub status: String,
+    pub persistent: bool,
+    pub durable: bool,
+    pub mailbox: bool,
+    pub administrator: bool,
+}
+
+#[derive(Clone)]
+pub enum DeliveryState {
+    Queued,
+    Sent,
+    Received(crate::Fingerprint),
+    Stored(crate::Fingerprint),
+    Expired,
+    Failed,
 }
 
 pub enum AppEvent {
@@ -151,6 +176,13 @@ pub enum AppEvent {
         nickname: String,
         body: String,
         verified: bool,
+        id: [u8; 16],
+        historical: bool,
+    },
+    Delivery {
+        lobby: LobbyId,
+        id: [u8; 16],
+        state: DeliveryState,
     },
     Invite(secrecy::SecretString),
     ShutdownComplete,

@@ -1,12 +1,20 @@
 use crate::Config;
 use nulllobby_core::{
     EphemeralIdentity, Fingerprint, LobbyCard, LobbyId,
-    domain::{AppEvent, LobbyName, LobbyTrust, LobbyView, MemberView, Nickname, PaddingPolicy},
+    domain::{
+        AppEvent, DeliveryState, LobbyName, LobbyTrust, LobbyView, MemberView, Nickname,
+        PaddingPolicy,
+    },
     message::{Packet, Payload, SignedMessage},
     replay::ReplayGuard,
     secret::PrivateLobbyKeys,
     session::SecureSession,
 };
+use nulllobby_core::{
+    governance::RotationOffer,
+    membership::{Credential, EnrollmentRequest},
+};
+use nulllobby_store::{RecordKind, StoredRecord, Vault};
 use nulllobby_transport::{
     Endpoint, EndpointHandle, NetworkObserver, NetworkStatus, Transport, TransportKind,
 };
@@ -15,11 +23,13 @@ use std::{
     sync::Arc,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
+use tokio::sync::oneshot;
 use tokio::{
     sync::mpsc,
     task::{AbortHandle, JoinSet},
 };
 use zeroize::Zeroizing;
+mod features;
 
 pub(crate) enum Command {
     Send(Payload),
@@ -28,12 +38,26 @@ pub(crate) enum Command {
     Invite,
     Padding(PaddingPolicy),
     Reconnect,
+    Persist(bool),
+    Durable(bool),
+    Mailbox(bool),
+    Sync,
+    Rotate(Option<Fingerprint>),
+    RotationExport(LobbyId),
+    RotationReady(LobbyCard),
+    RotationFailed,
+    OrgTrust(Option<[u8; 32]>),
+    OrgRequest(std::path::PathBuf),
+    OrgImport(std::path::PathBuf),
     Stop,
 }
 pub(crate) enum Event {
     View(LobbyView),
     Ui(AppEvent),
     Stopped(LobbyId),
+    PrepareRotation { old: LobbyId, name: LobbyName },
+    RotationReady { old: LobbyId, card: LobbyCard },
+    FollowRotation { old: LobbyId, card: LobbyCard },
 }
 struct Connection {
     key: [u8; 32],
@@ -52,10 +76,29 @@ enum Net {
     Discovered(Vec<Endpoint>),
 }
 struct Peer {
-    tx: mpsc::Sender<Packet>,
+    tx: mpsc::Sender<Outbound>,
     task: AbortHandle,
     generation: u64,
     outbound: bool,
+    sync_cursor: usize,
+    synced: Option<Instant>,
+}
+struct Outbound {
+    packet: Packet,
+    written: Option<oneshot::Sender<()>>,
+}
+impl From<Packet> for Outbound {
+    fn from(packet: Packet) -> Self {
+        Self {
+            packet,
+            written: None,
+        }
+    }
+}
+impl Peer {
+    fn queue(&self, packet: Packet) -> bool {
+        self.tx.try_send(packet.into()).is_ok()
+    }
 }
 impl Drop for Peer {
     fn drop(&mut self) {
@@ -66,6 +109,7 @@ struct Member {
     join: SignedMessage,
     seen: Instant,
 }
+type CachedReceipt = ([u8; 32], [u8; 16], bool, SignedMessage, Instant);
 pub(crate) struct Room {
     card: LobbyCard,
     identity: Arc<EphemeralIdentity>,
@@ -94,8 +138,23 @@ pub(crate) struct Room {
     seeds: Vec<Endpoint>,
     own: Endpoint,
     status: String,
+    persistent: bool,
+    durable: bool,
+    mailbox: bool,
+    sequence_limit: u64,
+    pending: HashMap<[u8; 16], (SignedMessage, Instant)>,
+    retry_cursor: usize,
+    durable_seen: Vec<([u8; 32], [u8; 16], u64, u64)>,
+    durable_clock: u64,
+    receipts: Vec<CachedReceipt>,
+    issuer: Option<[u8; 32]>,
+    credentials: HashMap<[u8; 32], Credential>,
+    request: Option<EnrollmentRequest>,
+    rotating: Option<Option<Fingerprint>>,
+    closing: bool,
 }
 pub(crate) struct Start {
+    pub created: bool,
     pub card: LobbyCard,
     pub name: LobbyName,
     pub nickname: Nickname,
@@ -106,13 +165,14 @@ pub(crate) struct Start {
     pub observer: Arc<dyn NetworkObserver>,
 }
 impl Room {
-    pub fn new(
+    pub async fn new(
         start: Start,
         tx: mpsc::Sender<Event>,
         commands: mpsc::Receiver<Command>,
     ) -> Result<Self, &'static str> {
         let Start {
-            card,
+            mut card,
+            created,
             name,
             nickname,
             padding,
@@ -122,8 +182,35 @@ impl Room {
             observer,
         } = start;
         let id = card.lobby_id();
-        let identity =
-            Arc::new(EphemeralIdentity::generate(id).map_err(|_| "Identity generation failed")?);
+        let restored = if let Some(vault) = &config.vault {
+            let vault = vault.clone();
+            tokio::task::spawn_blocking(move || vault.restore(id))
+                .await
+                .map_err(|_| "Vault worker failed")?
+                .map_err(|_| "Vault identity restore failed; no identity fallback")?
+        } else {
+            None
+        };
+        let (identity, sequence, sequence_limit, persistent, durable, mailbox) =
+            if let Some((identity, start, limit, durable, mailbox)) = restored {
+                (Arc::new(identity), start, limit, true, durable, mailbox)
+            } else {
+                (
+                    Arc::new(
+                        EphemeralIdentity::generate(id)
+                            .map_err(|_| "Identity generation failed")?,
+                    ),
+                    0,
+                    u64::MAX,
+                    false,
+                    false,
+                    false,
+                )
+            };
+        if created && card.kind() == nulllobby_core::LobbyKind::Private {
+            card.set_administrator(identity.public_key())
+                .map_err(|_| "Administrator binding failed")?;
+        }
         let own = transport
             .local_transport_identity(local)
             .map_err(|_| "Endpoint unavailable")?;
@@ -133,7 +220,7 @@ impl Room {
             .map(Arc::new);
         let seeds = card.seeds().to_vec();
         let (net_tx, net_rx) = mpsc::channel(128);
-        Ok(Self {
+        let mut room = Self {
             card,
             identity,
             keys,
@@ -155,13 +242,41 @@ impl Room {
             presence_sequences: HashMap::new(),
             replay: ReplayGuard::new(id),
             trust: LobbyTrust::new(id),
-            sequence: 0,
+            sequence,
             generation: 0,
             dialing: vec![],
             seeds,
             own,
             status: "Listening; encrypted sessions required".to_owned(),
-        })
+            persistent,
+            durable,
+            mailbox,
+            sequence_limit,
+            pending: HashMap::new(),
+            retry_cursor: 0,
+            durable_seen: Vec::new(),
+            durable_clock: unix_time(),
+            receipts: Vec::new(),
+            issuer: None,
+            credentials: HashMap::new(),
+            request: None,
+            rotating: None,
+            closing: false,
+        };
+        if persistent {
+            let records = room
+                .stored_records()
+                .await
+                .map_err(|_| "Vault outbox restore failed")?;
+            for record in records.into_iter().filter(|r| r.kind == RecordKind::Outbox) {
+                if room.pending.len() >= 128 {
+                    return Err("Outbox limit reached");
+                }
+                room.pending
+                    .insert(record.message.id(), (record.message, Instant::now()));
+            }
+        }
+        Ok(room)
     }
     async fn ui(&self, event: AppEvent) {
         let _ = self.tx.send(Event::Ui(event)).await;
@@ -186,6 +301,16 @@ impl Room {
                     nickname: nickname.as_str().to_owned(),
                     fingerprint,
                     verified: self.trust.is_verified(self.card.lobby_id(), &fingerprint),
+                    organization: self
+                        .credentials
+                        .get(key)
+                        .filter(|c| {
+                            self.issuer.is_some_and(|issuer| {
+                                c.verify(self.card.lobby_id(), *key, issuer, unix_time())
+                                    .is_ok()
+                            })
+                        })
+                        .map(|c| format!("{} / {}", c.organization.as_str(), c.role.as_str())),
                 })
             })
             .collect();
@@ -200,6 +325,10 @@ impl Room {
                 fingerprint: self.identity.fingerprint(),
                 memory: self.identity.memory_status(),
                 status: self.status.clone(),
+                persistent: self.persistent,
+                durable: self.durable,
+                mailbox: self.mailbox,
+                administrator: self.card.administrator() == Some(self.identity.public_key()),
             }))
             .await;
     }
@@ -308,7 +437,7 @@ impl Room {
     }
     fn broadcast(&mut self, packet: Packet, except: Option<[u8; 32]>) {
         self.peers
-            .retain(|key, peer| Some(*key) == except || peer.tx.try_send(packet.clone()).is_ok());
+            .retain(|key, peer| Some(*key) == except || peer.queue(packet.clone()));
     }
     fn new_presence(&mut self, sender: [u8; 32], sequence: u64) -> bool {
         if self
@@ -325,8 +454,39 @@ impl Room {
         true
     }
     async fn local(&mut self, payload: Payload) -> Result<(), ()> {
-        self.sequence = self.sequence.checked_add(1).ok_or(())?;
-        let message = SignedMessage::new(&self.identity, self.sequence, payload).map_err(|_| ())?;
+        if self.rotating.is_some() {
+            return Err(());
+        }
+        let chat = matches!(payload, Payload::Chat(_));
+        if chat && self.pending.len() >= 128 {
+            return Err(());
+        }
+        let payload = match payload {
+            Payload::Chat(body) if self.durable => {
+                let created = unix_time();
+                Payload::DurableChat {
+                    body,
+                    created,
+                    expires: created.checked_add(86400).ok_or(())?,
+                }
+            }
+            p => p,
+        };
+        let message = self.sign(payload).await?;
+        if let Payload::DurableChat { expires, .. } = message.payload() {
+            let record = StoredRecord {
+                lobby: self.card.lobby_id(),
+                kind: RecordKind::Outbox,
+                expires: *expires,
+                message: message.clone(),
+            };
+            self.vault(move |v| v.put(record, unix_time())).await?;
+        }
+        if chat {
+            self.pending
+                .insert(message.id(), (message.clone(), Instant::now()));
+            self.delivery(message.id(), DeliveryState::Queued).await;
+        }
         self.receive(message, None).await
     }
     async fn receive(&mut self, message: SignedMessage, via: Option<[u8; 32]>) -> Result<(), ()> {
@@ -335,11 +495,24 @@ impl Room {
         {
             return Err(());
         }
-        if !self
-            .replay
-            .accept(&message, Instant::now())
-            .map_err(|_| ())?
-        {
+        let fresh = if matches!(message.payload(), Payload::DurableChat { .. }) {
+            self.accept_durable(&message).await?
+        } else {
+            self.replay
+                .accept(&message, Instant::now())
+                .map_err(|_| ())?
+        };
+        if !fresh {
+            if via.is_some() {
+                if let Payload::Receipt { sender, id, stored } = message.payload() {
+                    // A valid duplicate receipt can finish a prior failed local
+                    // disk commit; the original ID must still be pending.
+                    self.receive_receipt(*message.sender(), *sender, *id, *stored)
+                        .await?;
+                } else {
+                    self.acknowledge(&message).await?;
+                }
+            }
             return Ok(());
         }
         let sender = *message.sender();
@@ -363,7 +536,7 @@ impl Room {
                     },
                 );
             }
-            Payload::Chat(body) => {
+            Payload::Chat(body) | Payload::DurableChat { body, .. } => {
                 let nickname = self
                     .members
                     .get(&sender)
@@ -374,6 +547,8 @@ impl Room {
                     .unwrap_or("unknown")
                     .to_owned();
                 self.ui(AppEvent::MessageReceived {
+                    id: message.id(),
+                    historical: matches!(message.payload(), Payload::DurableChat { .. }),
                     lobby: self.card.lobby_id(),
                     fingerprint,
                     nickname,
@@ -381,6 +556,19 @@ impl Room {
                     verified: self.trust.is_verified(self.card.lobby_id(), &fingerprint),
                 })
                 .await;
+                if via.is_some() {
+                    self.acknowledge(&message).await?;
+                } else if !self.peers.is_empty() {
+                    self.delivery(message.id(), DeliveryState::Sent).await;
+                }
+            }
+            Payload::Receipt {
+                sender: original,
+                id,
+                stored,
+            } => {
+                self.receive_receipt(sender, *original, *id, *stored)
+                    .await?
             }
             Payload::Leave => {
                 if !self.new_presence(sender, message.sequence()) {
@@ -431,6 +619,9 @@ impl Room {
     }
     async fn connected(&mut self, session: Connection, outbound: bool) {
         let key = session.key;
+        if self.rotating.is_some() || self.closing {
+            return;
+        }
         let preferred = self.identity.public_key() < key;
         if let Some(peer) = self.peers.get(&key)
             && (peer.outbound == preferred || outbound != preferred)
@@ -459,7 +650,7 @@ impl Room {
             bootstrap.push(Packet::EndpointList(ads));
         }
         for packet in bootstrap {
-            if tx.try_send(packet).is_err() {
+            if tx.try_send(packet.into()).is_err() {
                 return;
             }
         }
@@ -477,12 +668,30 @@ impl Room {
                 task,
                 generation,
                 outbound,
+                sync_cursor: 0,
+                synced: None,
             },
         );
+        if let Some(credential) = self.credentials.get(&self.identity.public_key())
+            && let Ok(bytes) = credential.encode()
+            && let Some(peer) = self.peers.get(&key)
+        {
+            peer.queue(Packet::Membership(bytes));
+        }
+        if self.persistent
+            && let Some(peer) = self.peers.get(&key)
+        {
+            peer.queue(Packet::Sync);
+        }
         self.status = "Encrypted / identities require fingerprint verification".to_owned();
         self.view().await;
     }
     async fn invite(&mut self) {
+        if let Ok(card) = self.prepare_card() {
+            self.ui(AppEvent::Invite(card.export())).await;
+        }
+    }
+    fn prepare_card(&mut self) -> Result<LobbyCard, ()> {
         let mut seeds = Vec::new();
         match &self.own {
             Endpoint::Onion { .. } => seeds.push(self.own.clone()),
@@ -511,9 +720,9 @@ impl Room {
                 }
             }
         }
-        if self.card.set_seeds(seeds).is_ok() {
-            self.ui(AppEvent::Invite(self.card.export())).await;
-        }
+        self.card.set_seeds(seeds).map_err(|_| ())?;
+        use secrecy::ExposeSecret;
+        LobbyCard::parse(self.card.export().expose_secret()).map_err(|_| ())
     }
     async fn handle_command(&mut self, command: Option<Command>) -> bool {
         match command {
@@ -546,13 +755,24 @@ impl Room {
                 self.reconnect();
             }
             Some(Command::Reconnect) => self.reconnect(),
-            Some(Command::Stop) | None => {
+            Some(command) => {
+                if matches!(command, Command::Stop) {
+                    let _ = self.local(Payload::Leave).await;
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                    return false;
+                }
+                if self.feature_command(command).await.is_err() {
+                    self.notice("Operation failed: check vault availability, permissions, lobby authority and resource limits. No plaintext or transport fallback.").await;
+                }
+                self.view().await;
+            }
+            None => {
                 let _ = self.local(Payload::Leave).await;
                 tokio::time::sleep(Duration::from_millis(100)).await;
                 return false;
             }
         }
-        true
+        !self.closing
     }
     fn reconnect(&mut self) {
         for endpoint in self.seeds.clone() {
@@ -646,8 +866,11 @@ impl Room {
                     Packet::Ping(nonce) => self
                         .peers
                         .get(&key)
-                        .is_some_and(|p| p.tx.try_send(Packet::Pong(nonce)).is_ok()),
+                        .is_some_and(|p| p.queue(Packet::Pong(nonce))),
                     Packet::Pong(_) => true,
+                    Packet::Sync => self.sync_peer(key).await.is_ok(),
+                    Packet::Rotation(offer) => self.follow_rotation(offer, key).await.is_ok(),
+                    Packet::Membership(bytes) => self.membership(bytes, Some(key)).await.is_ok(),
                     _ => false,
                 };
                 if !valid {
@@ -672,9 +895,10 @@ impl Room {
             *key == self.identity.public_key() || m.seen.elapsed() < Duration::from_secs(180)
         });
         self.ads.expire(unix_time());
-        if heartbeat.is_multiple_of(2) {
+        if heartbeat.is_multiple_of(12) {
             let _ = self.advertise().await;
         }
+        self.retry().await;
         if self.peers.len() < 8 {
             self.reconnect();
         }
@@ -695,7 +919,7 @@ impl Room {
             {
                 self.dial(endpoint);
             }
-            let mut tick = tokio::time::interval(Duration::from_secs(30));
+            let mut tick = tokio::time::interval(Duration::from_secs(5));
             tick.tick().await;
             let mut heartbeat = 0u64;
             loop {
@@ -707,6 +931,9 @@ impl Room {
                         if !self.tick(heartbeat).await { break; }
                     }
                     _ = self.tasks.join_next(), if !self.tasks.is_empty() => {}
+                }
+                if self.closing {
+                    break;
                 }
             }
         }
@@ -763,7 +990,7 @@ async fn authenticate(
 }
 async fn peer_loop(
     session: Connection,
-    mut outgoing: mpsc::Receiver<Packet>,
+    mut outgoing: mpsc::Receiver<Outbound>,
     tx: mpsc::Sender<Net>,
     generation: u64,
     padding: PaddingPolicy,
@@ -800,8 +1027,11 @@ async fn peer_loop(
     };
     let write = async {
         while let Some(packet) = outgoing.recv().await {
-            let bytes = Zeroizing::new(packet.encode().map_err(|_| ())?);
+            let bytes = Zeroizing::new(packet.packet.encode().map_err(|_| ())?);
             writer.send(&bytes, padding).await.map_err(|_| ())?;
+            if let Some(written) = packet.written {
+                let _ = written.send(());
+            }
         }
         Ok::<(), ()>(())
     };

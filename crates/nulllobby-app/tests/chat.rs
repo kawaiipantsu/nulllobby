@@ -15,6 +15,7 @@ use std::{
 use tokio::sync::mpsc;
 
 struct Client {
+    deadline: tokio::time::Instant,
     tx: mpsc::Sender<AppCommand>,
     rx: mpsc::Receiver<AppEvent>,
     task: tokio::task::JoinHandle<()>,
@@ -24,16 +25,25 @@ impl Client {
         let (tx, cmd) = nulllobby_transport::command_channel();
         let (ev, rx) = nulllobby_transport::event_channel();
         let task = tokio::spawn(App::new(config, cmd, ev).run());
-        Self { tx, rx, task }
+        Self {
+            tx,
+            rx,
+            task,
+            deadline: tokio::time::Instant::now() + Duration::from_secs(90),
+        }
     }
     async fn send(&self, command: AppCommand) {
         self.tx.send(command).await.unwrap();
     }
     async fn event(&mut self) -> AppEvent {
-        tokio::time::timeout(Duration::from_secs(15), self.rx.recv())
-            .await
-            .expect("event deadline")
-            .expect("runtime alive")
+        tokio::time::timeout_at(
+            self.deadline
+                .min(tokio::time::Instant::now() + Duration::from_secs(15)),
+            self.rx.recv(),
+        )
+        .await
+        .expect("event deadline")
+        .expect("runtime alive")
     }
     async fn view(&mut self, ready: impl Fn(&LobbyView) -> bool) -> LobbyView {
         loop {
@@ -251,7 +261,12 @@ async fn successful_tor_lobbies_keep_endpoints_scoped_and_never_use_direct() {
                 .with_observer(audit.clone())
                 .run(),
         );
-        Client { tx, rx, task }
+        Client {
+            tx,
+            rx,
+            task,
+            deadline: tokio::time::Instant::now() + Duration::from_secs(90),
+        }
     };
     let mut alice = start();
     alice
@@ -360,3 +375,6 @@ async fn authenticated_peer_flood_is_disconnected_and_app_remains_responsive() {
     transport.stop().await.unwrap();
     app.stop().await;
 }
+
+#[path = "support/v050.rs"]
+mod v050;

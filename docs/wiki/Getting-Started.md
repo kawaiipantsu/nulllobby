@@ -14,7 +14,7 @@ make build
 ./target/x86_64-unknown-linux-gnu/release/nulllobby
 ```
 
-Core-dump prevention must succeed before chat starts. Memory locking is best effort and its actual status appears under `/privacy`. Normal runtime needs no writable HOME. No application config file, chat database or identity storage is created.
+Core-dump prevention must succeed before chat starts. Memory locking is best effort and its actual status appears under `/privacy`. Default runtime needs no writable HOME. No config or identity storage is created unless explicitly enabled. 0.5.0 cards use protocol v2; upgrade all participants and obtain fresh cards.
 
 ## First lobby
 
@@ -26,7 +26,7 @@ Core-dump prevention must succeed before chat starts. Memory locking is best eff
 6. `/verify <complete fingerprint>` records your comparison in this lobby only.
 7. Type text and Enter to send. PgUp/PgDn scroll. Ctrl+C or `/quit` shuts down endpoints.
 
-Use `/switch <number>` to select another lobby; `/lobbies` shows numbering. `/leave` removes the current lobby and its state. Rejoining or restarting gives a new identity and loses trust/history. `/reconnect` retries known seeds while the lobby remains active.
+Use `/switch <number>` to select another lobby; `/lobbies` shows numbering. `/leave` removes the current lobby and its state. Rejoining or restarting gives a new identity unless that lobby was explicitly saved in an encrypted vault. Human trust and live history are always lost. `/reconnect` retries known seeds while the lobby remains active.
 
 ## Public choices
 

@@ -49,7 +49,7 @@ cargo install cargo-fuzz --version 0.13.2 --locked
 NULLLOBBY_FUZZ_TOOLCHAIN=nightly-2026-10-03 make fuzz-smoke
 ```
 
-Nine libFuzzer targets exercise BitTorrent handshake, BEP 10, DHT bencode, cards, private invite text, Noise outer framing, canonical application messages, endpoints and terminal sanitation. The smoke task gives each target ten seconds, caps input length at 65536 and memory at 512 MiB. Longer campaigns should include valid canonical seeds and targeted mutations, particularly for checksummed/signed structures; random input alone reaches only a subset of semantic paths.
+Twelve libFuzzer targets exercise BitTorrent handshake, BEP 10, DHT bencode, cards, private invite text, Noise outer framing, canonical application messages, endpoints, terminal sanitation, rotation offers, organization credentials and vault decoding. Generate synthetic valid seeds with `cargo run --locked --manifest-path fuzz/Cargo.toml --example seeds`. Set `NULLLOBBY_FUZZ_SECONDS=60` (up to 3600) for a longer per-target campaign. The default smoke task gives each target ten seconds, caps input length at 65536 and memory at 512 MiB. Longer campaigns should include valid canonical seeds and targeted mutations, particularly for checksummed/signed structures; random input alone reaches only a subset of semantic paths.
 
 ```sh
 cargo +nightly-2026-10-03 fuzz run application -- -max_total_time=3600 -max_len=65536
@@ -68,3 +68,16 @@ Corpora, artifacts and coverage are ignored by Git. Do not use operational chat,
 - Do not claim an independent audit based on local tests, cargo audit or this implementation review.
 
 See [verification results](https://github.com/kawaiipantsu/nulllobby/blob/main/docs/VERIFICATION.md), [dependency review](https://github.com/kawaiipantsu/nulllobby/blob/main/docs/DEPENDENCIES.md) and the [protocol](Protocol.md).
+
+## Optional storage and membership regressions
+
+`nulllobby-app/tests/support/v050.rs` covers sender exit, recipient restart deduplication, sender outbox restart, live-only storage exclusion under load, mailbox consent, administrator-only rotation, excluded peers, Tor-instrumented rotation/storage retirement and membership separate from human trust. Store tests cover tampering, unsafe permissions/symlinks, exclusive locks, fresh Noise keys, sequence reservations, expiry/clock rollback, quotas and unavailable key providers.
+
+A real Linux Secret Service test creates an isolated DBus session and synthetic private keyring, without touching the user's keyring or requiring a real credential:
+
+```sh
+# Needs dbus-run-session, gnome-keyring-daemon and libsecret-tools:
+cargo test --locked -p nulllobby-store --test secret_service -- --ignored
+```
+
+No application networking occurs in offline issuer commands. Mailbox tests use real authenticated transport paths and synthetic chat only. These checks and short load/fuzz runs do not replace a professional security audit or long deployment soak.

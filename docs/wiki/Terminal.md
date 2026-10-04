@@ -99,6 +99,12 @@ The file contains display preferences, nickname, welcome-dismissed flag and at m
 /forget 1
 ~~~
 
-`/remember` requires saving enabled and an active public lobby. Autoconnect defaults off and joins only cards matching the explicitly selected transport. It never switches transport. Tor cards fail when all saved ephemeral seeds go offline. Private cards must be supplied again after restart.
+`/remember` requires saving enabled and an active public lobby. Autoconnect defaults off and joins only cards matching the explicitly selected transport. It never switches transport. Tor cards fail when all saved ephemeral seeds go offline. Private cards must be supplied again after restart unless that lobby was explicitly saved in a separate encrypted vault.
 
 F4 → `7` disables saving and removes the settings file; this is not secure erasure from backups/storage. With RAM-only settings, welcome appears once per process. Enable preferences to remember dismissal across processes, or pass `--no-welcome`. Bot mode ignores TUI preferences/bookmarks.
+
+## 0.5.0 storage and team status
+
+The chat view adds queued/sent/peer-received/mailbox-stored/expired labels for outgoing messages and a durable marker for records that can be replayed. Organization labels remain separate from human verified/unverified status. The status line reports saved identity, durable sending and mailbox opt-ins; `/privacy` gives the full state.
+
+Saved preferences still exclude secrets. Optional saved private cards/identities use the separate encrypted vault described in [Storage and delivery](Storage-and-Delivery). Protocol v1 bookmarks must be replaced with fresh v2 cards after upgrading all participants. No old card is silently migrated.

@@ -13,7 +13,7 @@ fn diagnostics_work_without_a_writable_home_and_do_not_print_keys() {
     assert!(stdout.contains("Core-dump prevention: Active"));
     assert!(stdout.contains("Network: inactive"));
     assert!(stdout.contains("Noise_XXpsk3_25519_ChaChaPoly_BLAKE2s"));
-    assert!(!stdout.contains("nl:v1:"));
+    assert!(!stdout.contains("nl:"));
     assert!(output.stderr.is_empty());
 }
 
@@ -29,6 +29,36 @@ fn unsupported_arguments_are_never_echoed() {
             .unwrap()
             .contains("sensitive-input-canary")
     );
+}
+
+#[test]
+fn vault_and_issuer_cli_fail_closed_without_touching_a_keyring() {
+    for args in [
+        vec!["--vault", "sensitive-relative-path-canary"],
+        vec!["--org-create-issuer", "sensitive-relative-path-canary"],
+        vec![
+            "--org-issuer",
+            "sensitive-relative-path-canary",
+            "--org-hours",
+            "9",
+        ],
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_nulllobby"))
+            .args(args)
+            .env(
+                "DBUS_SESSION_BUS_ADDRESS",
+                "unix:path=/nonexistent/nulllobby-test-bus",
+            )
+            .output()
+            .unwrap();
+        assert!(!output.status.success());
+        assert!(output.stdout.is_empty());
+        assert!(
+            !String::from_utf8(output.stderr)
+                .unwrap()
+                .contains("sensitive-relative-path-canary")
+        );
+    }
 }
 
 #[test]

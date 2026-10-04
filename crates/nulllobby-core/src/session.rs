@@ -16,7 +16,7 @@ pub const PUBLIC_SUITE: &str = "Noise_XX_25519_ChaChaPoly_BLAKE2s";
 pub const PRIVATE_SUITE: &str = "Noise_XXpsk3_25519_ChaChaPoly_BLAKE2s";
 pub const MAX_PLAINTEXT: usize = 16_366;
 const PROOF_LEN: usize = 226;
-const PROOF_DOMAIN: &[u8] = b"nulllobby.identity.v1";
+const PROOF_DOMAIN: &[u8] = b"nulllobby.identity.v2";
 
 #[derive(Debug, thiserror::Error)]
 pub enum SessionError {
@@ -45,7 +45,7 @@ impl From<snow::Error> for SessionError {
 /// Proof additionally binds the Noise transcript, preventing reuse in another connection.
 fn proof(identity: &EphemeralIdentity, hash: &[u8; 32]) -> Result<[u8; PROOF_LEN], SessionError> {
     let mut proof = [0; PROOF_LEN];
-    proof[..2].copy_from_slice(&1u16.to_be_bytes());
+    proof[..2].copy_from_slice(&crate::domain::PROTOCOL_VERSION.to_be_bytes());
     proof[2..34].copy_from_slice(identity.lobby().as_bytes());
     proof[34..66].copy_from_slice(&identity.public_key());
     proof[66..98].copy_from_slice(&identity.noise_public_key());
@@ -63,7 +63,7 @@ pub fn verify_identity_proof(
     hash: &[u8; 32],
 ) -> Result<[u8; 32], SessionError> {
     if bytes.len() != PROOF_LEN
-        || bytes[..2] != 1u16.to_be_bytes()
+        || bytes[..2] != crate::domain::PROTOCOL_VERSION.to_be_bytes()
         || bytes[2..34] != *lobby.as_bytes()
         || bytes[66..98] != *remote_static
         || bytes[130..162] != *hash
@@ -116,7 +116,7 @@ impl SecureSession {
         } else {
             PUBLIC_SUITE
         };
-        let mut prologue = b"nulllobby.session.v1".to_vec();
+        let mut prologue = b"nulllobby.session.v2".to_vec();
         prologue.extend_from_slice(local.lobby().as_bytes());
         let mut builder = Builder::new(suite.parse()?)
             .local_private_key(local.noise_secret())?

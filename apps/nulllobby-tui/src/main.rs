@@ -3,6 +3,7 @@ mod bot_cli;
 mod input;
 mod invite;
 mod settings;
+mod storage_cli;
 mod theme;
 mod ui;
 use nulllobby_app::{App, Config};
@@ -47,10 +48,14 @@ fn run(hardening: HardeningStatus) -> Result<(), &'static str> {
     let mut theme_override = None;
     let mut no_welcome = false;
     let mut bot_args = bot_cli::Args::default();
+    let mut storage_args = storage_cli::Args::default();
     let mut args = args.iter();
     while let Some(arg) = args.next() {
         let option = arg.to_str().ok_or("Invalid option; use --help")?;
         if bot_args.parse(option, &mut args)? {
+            continue;
+        }
+        if storage_args.parse(option, &mut args)? {
             continue;
         }
         match option {
@@ -176,13 +181,13 @@ fn run(hardening: HardeningStatus) -> Result<(), &'static str> {
     if let Some(option) = diagnostic {
         match option {
             "--help" | "-h" => println!(
-                "{} {}\n\nRun without options for the terminal client.\n--transport direct|tor\n--listen IP:PORT          Direct listener (default random port)\n--peer IP:PORT            Explicit Direct peer (up to 8)\n--no-dht                  Direct localhost/developer mode\n--tor-socks 127.0.0.1:9050\n--tor-control 127.0.0.1:9051\n--tor-cookie PATH         Explicit SAFECOOKIE authentication file\n--tor-backend external|arti (Arti requires experimental build)\n--arti-state PATH         Durable Tor guard state (absolute)\n--arti-cache PATH         Tor directory cache (absolute)\n--help --version --about --security --self-check\n\nDirect exposes peer IPs. Tor never falls back to Direct. Identity keys, trust and chat history stay in RAM.",
+                "{} {}\n\nRun without options for the terminal client.\n--transport direct|tor\n--listen IP:PORT          Direct listener (default random port)\n--peer IP:PORT            Explicit Direct peer (up to 8)\n--no-dht                  Direct localhost/developer mode\n--tor-socks 127.0.0.1:9050\n--tor-control 127.0.0.1:9051\n--tor-cookie PATH         Explicit SAFECOOKIE authentication file\n--tor-backend external|arti (Arti requires experimental build)\n--arti-state PATH         Durable Tor guard state (absolute)\n--arti-cache PATH         Tor directory cache (absolute)\n--help --version --about --security --self-check\n\nDirect exposes peer IPs. Tor never falls back to Direct. Defaults keep identities, trust and chat in RAM; encrypted persistence is explicit per lobby.",
                 branding::PROJECT,
                 env!("CARGO_PKG_VERSION")
             ),
             "--version" => println!("{} {}", branding::PROJECT, env!("CARGO_PKG_VERSION")),
             "--about" => println!(
-                "{}\nCreated by {} for {}\n{}\n\n{}\n\nApplication identities, trust and history are RAM only. Direct is not anonymous. Tor uses onion-service transport. No independent professional security audit has yet been completed.",
+                "{}\nCreated by {} for {}\n{}\n\n{}\n\nDefault identities, trust and history stay in RAM. Encrypted identity and durable delivery storage are optional. Direct is not anonymous. Tor uses onion-service transport. No independent professional security audit has yet been completed.",
                 branding::PROJECT,
                 branding::AUTHOR,
                 branding::COMMUNITY,
@@ -209,14 +214,18 @@ fn run(hardening: HardeningStatus) -> Result<(), &'static str> {
             _ => return Err("Unsupported diagnostic"),
         }
         if matches!(option, "--help" | "-h") {
+            println!("{}", storage_cli::HELP);
             println!(
-                "\nAppearance:\n--theme NAME|PATH          Built-in palette, palette TOML or irssi .theme\n--settings PATH           Opt in to saved preferences (0600)\n--no-welcome              Skip the welcome overlay\nF1 help, F4 settings, F6 paste preview. Chat starts empty.\n\nHeadless bot:\n--bot --bot-name NAME --bot-provider local|openai|claude --bot-model MODEL\n--bot-card-stdin          Read invitation from stdin until EOF\n--bot-create public|private --bot-lobby-name NAME\n--bot-export-invite       Explicitly print invitation to stdout\n--bot-endpoint URL        Local model at a literal loopback IP\n--bot-max-requests N      Session quota, default 100 (maximum 10000)\n--allow-cloud             Permit addressed prompts to leave the lobby\nCloud providers use OPENAI_API_KEY / ANTHROPIC_API_KEY; disabled in Tor mode.\nBots answer only @NAME prompts, one at a time, at most once per 5 seconds.\n\nSaving preferences is optional: nickname, theme, public cards and autoconnect.\nIdentity keys, trust, private invitations and chat history stay in RAM."
+                "\nAppearance:\n--theme NAME|PATH          Built-in palette, palette TOML or irssi .theme\n--settings PATH           Opt in to saved preferences (0600)\n--no-welcome              Skip the welcome overlay\nF1 help, F4 settings, F6 paste preview. Chat starts empty.\n\nHeadless bot:\n--bot --bot-name NAME --bot-provider local|openai|claude --bot-model MODEL\n--bot-card-stdin          Read invitation from stdin until EOF\n--bot-create public|private --bot-lobby-name NAME\n--bot-export-invite       Explicitly print invitation to stdout\n--bot-endpoint URL        Local model at a literal loopback IP\n--bot-max-requests N      Session quota, default 100 (maximum 10000)\n--allow-cloud             Permit addressed prompts to leave the lobby\nCloud providers use OPENAI_API_KEY / ANTHROPIC_API_KEY; disabled in Tor mode.\nBots answer only @NAME prompts, one at a time, at most once per 5 seconds.\n\nSaving preferences is optional: nickname, theme, public cards and autoconnect.\nSecret storage uses a separate explicit encrypted vault; trust remains in RAM."
             );
         }
         return Ok(());
     }
     if hardening != HardeningStatus::Active {
         return Err("Core-dump prevention failed; refusing to start chat");
+    }
+    if storage_args.apply(&mut config)? {
+        return Ok(());
     }
     if config.mode == TransportKind::Tor && !config.peers.is_empty() {
         return Err("--peer is Direct-only; Tor peers come from onion lobby cards");

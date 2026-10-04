@@ -32,7 +32,7 @@ pub fn card_area(overlay: Rect) -> Rect {
     )
 }
 fn valid_card_text(card: &str) -> bool {
-    card.starts_with("nl:v1:")
+    card.starts_with("nl:v2:")
         && card.len() <= nulllobby_core::limits::CARD_TEXT_BYTES
         && card
             .bytes()
@@ -103,7 +103,7 @@ mod tests {
     use super::*;
     #[test]
     fn card_display_is_one_unbroken_write_and_clipboard_needs_explicit_call() {
-        let card = format!("nl:v1:direct-private:{}", "A".repeat(200));
+        let card = format!("nl:v2:direct-private:{}", "A".repeat(200));
         let mut output = Vec::new();
         draw(
             &mut output,
@@ -121,6 +121,6 @@ mod tests {
         let encoded = &output[7..output.len() - 1];
         assert_eq!(STANDARD.decode(encoded).unwrap(), card.as_bytes());
         assert!(!fits(&card, Rect::new(0, 0, 10, 2)));
-        assert!(copy(&mut Vec::new(), "nl:v1:\x1b]52;c;bad\x07").is_err());
+        assert!(copy(&mut Vec::new(), "nl:v2:\x1b]52;c;bad\x07").is_err());
     }
 }

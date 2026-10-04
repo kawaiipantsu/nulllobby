@@ -22,7 +22,7 @@ jobs:
           toolchain: '1.94.1'
           components: rustfmt, clippy
       - name: Install native build dependencies
-        run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev pkg-config gnupg
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libsqlite3-dev pkg-config gnupg dbus libsecret-tools gnome-keyring
       - name: Install Rust security tools
         run: |
           cargo install cargo-audit --version 0.22.2 --locked --no-default-features
@@ -31,6 +31,8 @@ jobs:
       - run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
       - run: cargo test --locked --workspace
       - run: cargo test --locked --workspace --all-features
+      - name: Isolated real Linux Secret Service roundtrip
+        run: cargo test --locked -p nulllobby-store --test secret_service -- --ignored
       - name: Patched upstream service tests
         run: cargo test --locked --manifest-path vendor/tor-hsservice/Cargo.toml --lib --features ephemeral-service,hs-pow-full
         env:
@@ -58,6 +60,7 @@ jobs:
         with:
           toolchain: nightly-2026-10-03
       - run: cargo install cargo-fuzz --version 0.13.2 --locked
+      - run: cargo run --locked --manifest-path fuzz/Cargo.toml --example seeds
       - run: make fuzz-smoke
         env:
           NULLLOBBY_FUZZ_TOOLCHAIN: nightly-2026-10-03
