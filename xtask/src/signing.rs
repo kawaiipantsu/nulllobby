@@ -639,7 +639,7 @@ fn parse_public_key(listing: &str) -> Result<(String, Vec<String>)> {
     Ok((fingerprint, user_ids))
 }
 
-fn validate_signature_status(status: &str, fingerprint: &str) -> Result<()> {
+pub(crate) fn validate_signature_status(status: &str, fingerprint: &str) -> Result<()> {
     let mut valid = 0;
     for line in status.lines() {
         let Some(payload) = line.strip_prefix("[GNUPG:] ") else {

@@ -23,6 +23,8 @@ This release includes the Linux client, shared Rust core and integrated XXC rele
 
 ### Packages and installation
 
+**APT availability (2026-10-04):** Both original 0.4.2 Debian packages are now published in the official [THUGS(red) repository](https://apt.thugs.red), suite `zerotrust`. Follow the [APT setup guide](https://github.com/kawaiipantsu/nulllobby/wiki/APT), then run `sudo apt update` and `sudo apt install nulllobby`. The archive has a separate signing key. Public APT downloads were verified against the signed GitHub release bytes; the release binaries were not rebuilt for APT publication.
+
 The standard package supports Direct and external Tor. The separately named experimental Arti package adds embedded Tor and its documented local service-storage patch. Both install `/usr/bin/nulllobby`; choose one package. External Tor remains the default Tor backend.
 
 ```sh

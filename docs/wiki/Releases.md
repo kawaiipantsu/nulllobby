@@ -57,6 +57,12 @@ Both workflows use `docs/RELEASE-NOTES.md` without shell interpolation. A duplic
 
 Review the draft's scope and artifacts in GitHub, then publish it. This is an explicit maintainer action; building or bumping never publishes automatically.
 
+## Publish Debian packages to APT
+
+The official public archive is `https://apt.thugs.red/repo`, suite `zerotrust`. After GitHub publication, run `make apt-publish` on the authorized maintainer host with the original signed release artifacts in `dist/`. It verifies GitHub asset hashes, uploads and stages both variants, reviews the suite diff and publishes through the scoped API. Then it verifies signed archive metadata and public package downloads. `make apt-verify` repeats that public check without maintainer credentials.
+
+See [APT setup and publishing](APT) for the separate archive key, restricted external configuration, required token scopes and recovery rules. Keep the private API address and credentials outside Git. Do not rebuild an existing release merely to publish it to APT.
+
 ## Discussion notification
 
 The `release-notification.yml` workflow runs on a published release, with `discussions: write` and `contents: read`. Rust tooling validates the tag, refuses a draft release, discovers the Announcements category and posts a link plus release notes. It checks the latest 100 Discussions for the same title before posting to reduce rerun duplicates; this is not a cross-process atomic deduplication guarantee.

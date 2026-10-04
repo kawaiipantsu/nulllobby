@@ -30,4 +30,6 @@ At review, Debian listed open issues affecting CMS (`gpgsm`), TPM operations and
 
 CI repeats the synthetic signing tests without production credentials. A local scan found no production CA token in tracked or non-ignored project files. Only the public release key and its SHA-256 pin are committed. The approved project email is intentionally present in the public OpenPGP identity.
 
-No automatic exchange publication, CA root installation, APT repository, signing-key revocation/rotation service, GUI certificate feature or organization credential protocol is implemented. See the [release guide](wiki/Release-Signing.md) and [organization identity proposal](ORGANIZATION-IDENTITY.md).
+APT publishing was added on 2026-10-04 through the official THUGS(red) archive's scoped management API. It uses a separate pinned archive public key and locally verifies detached `Release.gpg` signatures with `gpgv`, followed by metadata dates, SHA-256 index hashes and downloaded package hashes. Only Ed25519/SHA-256 binary-document signatures from that archive key are accepted. The archive also supplies `InRelease` for ordinary APT clients. See the [APT verification record](wiki/APT.md).
+
+No automatic exchange publication, CA root installation, signing-key revocation/rotation service, GUI certificate feature or organization credential protocol is implemented. See the [release guide](wiki/Release-Signing.md) and [organization identity proposal](ORGANIZATION-IDENTITY.md).

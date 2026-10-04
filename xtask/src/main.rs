@@ -2,6 +2,7 @@
 //! with structured arguments, never interpolated shell command text.
 #![forbid(unsafe_code)]
 
+mod apt;
 mod signing;
 
 use sha2::{Digest, Sha256};
@@ -46,9 +47,10 @@ fn run() -> Result<()> {
         [action @ ("ca-status" | "ca-enroll" | "sign-release" | "verify-release")] => {
             signing::run(action)
         }
+        [action @ ("apt-status" | "apt-publish" | "apt-verify")] => apt::run(action),
         ["announce", tag] => announce(tag),
         _ => {
-            Err("use: cargo xtask build|deb|check|bump major|bump minor|bump patch|release|release-unsigned|ca-status|ca-enroll|sign-release|verify-release".into())
+            Err("use: cargo xtask build|deb|check|bump major|bump minor|bump patch|release|release-unsigned|ca-status|ca-enroll|sign-release|verify-release|apt-status|apt-publish|apt-verify".into())
         }
     }
 }

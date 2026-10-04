@@ -1,7 +1,7 @@
-.PHONY: help build build-arti test check deb deb-arti screenshots bump-major bump-minor bump-patch release release-signed release-unsigned sign-release verify-release ca-status ca-enroll clean
+.PHONY: help build build-arti test check deb deb-arti screenshots bump-major bump-minor bump-patch release release-signed release-unsigned sign-release verify-release ca-status ca-enroll apt-status apt-publish apt-verify clean
 
 help:
-	@echo 'build | build-arti | test | check | deb | deb-arti | screenshots | bump-major | bump-minor | bump-patch | release | release-signed | release-unsigned | sign-release | verify-release | ca-status | ca-enroll | fuzz-smoke | clean'
+	@echo 'build | build-arti | test | check | deb | deb-arti | screenshots | bump-major | bump-minor | bump-patch | release | release-signed | release-unsigned | sign-release | verify-release | ca-status | ca-enroll | apt-status | apt-publish | apt-verify | fuzz-smoke | clean'
 
 build:
 	cargo xtask build
@@ -50,6 +50,15 @@ ca-status:
 
 ca-enroll:
 	cargo xtask ca-enroll
+
+apt-status:
+	cargo xtask apt-status
+
+apt-publish:
+	cargo xtask apt-publish
+
+apt-verify:
+	cargo xtask apt-verify
 
 clean:
 	cargo clean

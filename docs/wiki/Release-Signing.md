@@ -42,7 +42,7 @@ For manual inspection, GnuPG can verify a detached manifest signature with `gpg 
 
 The `.sha256` file uses SHA-256 over the exact armored public-key file. Legacy OpenPGP v4 fingerprints displayed by GnuPG are protocol lookup identifiers, not the trust anchor. They are unrelated to NullLobby lobby fingerprints. A public key and checksum downloaded from the same compromised source would not independently identify the publisher. Establish the initial pin separately, and review changes to it.
 
-Detached signatures are **not automatically checked by `apt install ./file.deb`**. Verify before installation. An APT repository would need `Packages`/`Release` metadata and signed `InRelease` or `Release.gpg`; this project does not create or advertise an APT repository yet. See [Debian's apt-secure documentation](https://manpages.debian.org/trixie/apt/apt-secure.8.en.html).
+Detached signatures are **not automatically checked by `apt install ./file.deb`**. Verify before installing a standalone file. The official [THUGS(red) APT repository](APT) authenticates its `Packages`/`Release` metadata with a separate archive signing key and provides `InRelease` and `Release.gpg`. `make apt-publish` verifies the original signed release artifacts before publishing them to `zerotrust`. See [Debian's apt-secure documentation](https://manpages.debian.org/trixie/apt/apt-secure.8.en.html).
 
 ## Maintainer configuration
 

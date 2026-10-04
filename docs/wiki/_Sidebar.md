@@ -2,6 +2,7 @@
 
 - [Home](Home)
 - [Getting started](Getting-Started)
+- [APT installation and publishing](APT)
 - [Terminal and themes](Terminal)
 - [Screenshots](Screenshots)
 - [Bots](Bots)

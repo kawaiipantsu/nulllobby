@@ -49,9 +49,11 @@ Follow [Tor setup](Tor.md). Choose `--transport tor` at launch or `/transport to
 
 ## Debian package
 
+Use the official [APT installation guide](APT) to configure the `zerotrust` suite and install `nulllobby`. For a local build:
+
 ```sh
 make deb
-sudo apt install ./dist/nulllobby_0.3.0_amd64.deb
+sudo apt install ./dist/nulllobby_0.4.2_amd64.deb
 nulllobby
 ```
 
