@@ -55,6 +55,8 @@ Inside the full-screen client:
 
 Share the explicitly revealed card through an appropriate channel. Another participant uses `/join <card>`. Compare complete fingerprints out of band, then `/verify <fingerprint>`. Nicknames are cosmetic; a new key is `encrypted / unverified`.
 
+Direct mode works with ordinary `nulllobby` launches: default invitations use DHT discovery and a random listener port. At least one participant must accept inbound TCP; discovery needs DNS and outbound UDP. **0.5.2 fixes bootstrap discovery for seedless invitations.** Use F5 or `/network` to inspect DHT announcements and connection failures. See [connection troubleshooting](docs/wiki/Connectivity.md).
+
 ```text
 /help                         /who                  /fingerprint
 /create public <name>         /verify <fingerprint> /unverify <fingerprint>

@@ -143,10 +143,37 @@ pub struct LobbyView {
     pub fingerprint: crate::Fingerprint,
     pub memory: [nulllobby_platform::HardeningStatus; 2],
     pub status: String,
+    pub network: LobbyNetworkView,
     pub persistent: bool,
     pub durable: bool,
     pub mailbox: bool,
     pub administrator: bool,
+}
+
+#[derive(Clone, Copy, Default, Debug, Eq, PartialEq)]
+pub enum DiscoveryState {
+    #[default]
+    NotUsed,
+    Disabled,
+    Starting,
+    Querying,
+    Ready,
+    Unavailable,
+}
+
+/// Local inspection data only. Contains no remote address history or secrets.
+#[derive(Clone, Default)]
+pub struct LobbyNetworkView {
+    pub listener: String,
+    pub discovery: DiscoveryState,
+    pub queries: usize,
+    pub replies: usize,
+    pub tokens: usize,
+    pub announces: usize,
+    pub candidates: usize,
+    pub pending_connections: usize,
+    pub failed_connections: u64,
+    pub last_failure: Option<&'static str>,
 }
 
 #[derive(Clone)]

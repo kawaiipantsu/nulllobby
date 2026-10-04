@@ -34,6 +34,8 @@ pub struct DiscoveryStats {
     pub queries: usize,
     pub replies: usize,
     pub announces: usize,
+    pub tokens: usize,
+    pub observations: usize,
 }
 #[derive(Default)]
 struct Reply {
@@ -43,6 +45,11 @@ struct Reply {
     peers: Vec<SocketAddrV4>,
     public_ip: Option<Ipv4Addr>,
     response: bool,
+}
+enum Query<'a> {
+    FindNode,
+    GetPeers,
+    Announce(NonZeroU16, &'a [u8]),
 }
 impl Discovery {
     pub async fn start(
@@ -124,13 +131,27 @@ impl Discovery {
             let Some(index) = candidates.iter().position(|(_, a)| !visited.contains(a)) else {
                 break;
             };
-            let (_, address) = candidates.remove(index);
+            let (node_id, address) = candidates.remove(index);
             visited.insert(address);
             self.stats.queries += 1;
-            let Ok(reply) = self.request(address, hash, None).await else {
+            // Bootstrap routers supply routing contacts, not necessarily
+            // get_peers tokens/values. First find the nodes nearest this swarm.
+            let bootstrap = node_id == [0; 20];
+            let query = if bootstrap {
+                Query::FindNode
+            } else {
+                Query::GetPeers
+            };
+            let Ok(reply) = self.request(address, hash, query).await else {
                 continue;
             };
             self.stats.replies += 1;
+            if !reply.token.is_empty() {
+                self.stats.tokens += 1;
+            }
+            if reply.public_ip.is_some() {
+                self.stats.observations += 1;
+            }
             if let Some(ip) = reply
                 .public_ip
                 .filter(|ip| public_v4(*ip) && Some(*ip) != self.public_ip)
@@ -152,9 +173,10 @@ impl Discovery {
                     candidates.push(node);
                 }
             }
-            if !reply.token.is_empty()
+            if !bootstrap
+                && !reply.token.is_empty()
                 && self
-                    .request(address, hash, Some((port, &reply.token)))
+                    .request(address, hash, Query::Announce(port, &reply.token))
                     .await
                     .is_ok()
             {
@@ -178,7 +200,7 @@ impl Discovery {
         &self,
         address: SocketAddrV4,
         hash: [u8; 20],
-        announce: Option<(NonZeroU16, &[u8])>,
+        query: Query<'_>,
     ) -> io::Result<Reply> {
         self.observer
             .before_network_action(NetworkAction::UdpDiscovery)
@@ -187,19 +209,25 @@ impl Discovery {
         getrandom::fill(&mut transaction).map_err(|_| io::ErrorKind::Other)?;
         let mut request = b"d1:ad2:id20:".to_vec();
         request.extend_from_slice(&self.id);
-        if announce.is_some() {
+        if matches!(query, Query::Announce(..)) {
             request.extend_from_slice(b"12:implied_porti0e");
         }
-        request.extend_from_slice(b"9:info_hash20:");
+        request.extend_from_slice(if matches!(query, Query::FindNode) {
+            b"6:target20:"
+        } else {
+            b"9:info_hash20:"
+        });
         request.extend_from_slice(&hash);
-        if let Some((port, token)) = announce {
+        if let Query::Announce(port, token) = query {
             request.extend_from_slice(
                 format!("4:porti{}e5:token{}:", port.get(), token.len()).as_bytes(),
             );
             request.extend_from_slice(token);
             request.extend_from_slice(b"e1:q13:announce_peer");
-        } else {
+        } else if matches!(query, Query::GetPeers) {
             request.extend_from_slice(b"e1:q9:get_peers");
+        } else {
+            request.extend_from_slice(b"e1:q9:find_node");
         }
         request.extend_from_slice(b"2:roi1e1:t8:");
         request.extend_from_slice(&transaction);
@@ -364,65 +392,6 @@ fn public_v4(ip: Ipv4Addr) -> bool {
 #[cfg(test)]
 mod network_tests {
     use super::*;
-    use nulllobby_transport::{ModePolicy, TransportKind};
-    #[tokio::test]
-    async fn actual_get_peers_and_announce_are_bounded_and_token_authenticated() {
-        let server = UdpSocket::bind("127.0.0.1:0").await.unwrap();
-        let SocketAddr::V4(seed) = server.local_addr().unwrap() else {
-            panic!("v4 fixture")
-        };
-        let task = tokio::spawn(async move {
-            for expected in [b"get_peers".as_slice(), b"announce_peer"] {
-                let mut input = [0; 2048];
-                let (len, source) = server.recv_from(&mut input).await.unwrap();
-                let mut decoder = Decoder::new(&input[..len]).with_max_depth(4);
-                let Some(Object::Dict(mut root)) = decoder.next_object().unwrap() else {
-                    panic!("dict query")
-                };
-                let mut transaction = Vec::new();
-                let mut query = Vec::new();
-                let mut token = Vec::new();
-                while let Some((key, value)) = root.next_pair().unwrap() {
-                    match (key, value) {
-                        (b"t", Object::Bytes(value)) => transaction.extend_from_slice(value),
-                        (b"q", Object::Bytes(value)) => query.extend_from_slice(value),
-                        (b"a", Object::Dict(mut args)) => {
-                            while let Some((key, value)) = args.next_pair().unwrap() {
-                                if key == b"token" {
-                                    token = bytes(value).unwrap().to_vec();
-                                }
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-                assert_eq!(query, expected);
-                assert_eq!(transaction.len(), 8);
-                if expected == b"announce_peer" {
-                    assert_eq!(token, b"test-token");
-                }
-                let mut reply =
-                    b"d1:rd2:id20:123456789012345678905:token10:test-token6:valuesl6:".to_vec();
-                reply.extend_from_slice(&[127, 0, 0, 1, 0xc3, 0x50]);
-                reply.extend_from_slice(b"ee1:t8:");
-                reply.extend_from_slice(&transaction);
-                reply.extend_from_slice(b"1:y1:re");
-                server.send_to(&reply, source).await.unwrap();
-            }
-        });
-        let mut discovery = Discovery::start(
-            Arc::new(ModePolicy(TransportKind::Direct)),
-            Some(vec![seed]),
-        )
-        .await
-        .unwrap();
-        let peers = discovery
-            .discover_and_announce([42; 32], NonZeroU16::new(50001).unwrap())
-            .await
-            .unwrap();
-        assert_eq!(peers.len(), 1);
-        task.await.unwrap();
-    }
     #[test]
     fn public_dht_cannot_direct_lan_or_reserved_address_probes() {
         for ip in [

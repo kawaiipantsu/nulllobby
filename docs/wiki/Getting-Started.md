@@ -26,7 +26,7 @@ Core-dump prevention must succeed before chat starts. Memory locking is best eff
 6. `/verify <complete fingerprint>` records your comparison in this lobby only.
 7. Type text and Enter to send. PgUp/PgDn scroll. Ctrl+C or `/quit` shuts down endpoints.
 
-Use `/switch <number>` to select another lobby; `/lobbies` shows numbering. `/leave` removes the current lobby and its state. Rejoining or restarting gives a new identity unless that lobby was explicitly saved in an encrypted vault. Human trust and live history are always lost. `/reconnect` retries known seeds while the lobby remains active.
+Use `/switch <number>` to select another lobby; `/lobbies` shows numbering. `/leave` removes the current lobby and its state. Rejoining or restarting gives a new identity unless that lobby was explicitly saved in an encrypted vault. Human trust and live history are always lost. `/reconnect` retries known seeds and configured peers; in Direct mode it also requests a DHT refresh. F5 or `/network` shows listener, discovery and connection counters. See [connection troubleshooting](Connectivity) for ordinary launches without CLI overrides.
 
 ## Public choices
 
@@ -53,7 +53,7 @@ Use the official [APT installation guide](APT) to configure the `zerotrust` suit
 
 ```sh
 make deb
-sudo apt install ./dist/nulllobby_0.4.2_amd64.deb
+sudo apt install ./dist/nulllobby_0.5.2_amd64.deb
 nulllobby
 ```
 

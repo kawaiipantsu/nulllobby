@@ -64,6 +64,9 @@ pub struct Config {
     #[cfg(feature = "tor-arti-experimental")]
     pub arti: Option<ArtiOptions>,
     pub no_dht: bool,
+    /// Trusted loopback DHT fixture override for integration tests; never read
+    /// from lobby cards or remote input. None uses the public bootstrap routers.
+    pub discovery_bootstrap: Option<Vec<std::net::SocketAddrV4>>,
     pub peers: Vec<Endpoint>,
     pub mode: TransportKind,
 }
@@ -76,6 +79,7 @@ impl Default for Config {
             #[cfg(feature = "tor-arti-experimental")]
             arti: None,
             no_dht: false,
+            discovery_bootstrap: None,
             peers: vec![],
             mode: TransportKind::Direct,
         }
@@ -411,6 +415,19 @@ impl App {
                     }
                 }
                 if let Some(room) = room {
+                    if matches!(inspection, Inspection::Network) {
+                        let net = &room.network;
+                        self.notice(format!(
+                            "Local listener: {} (a wildcard bind is not a public address)",
+                            net.listener
+                        ))
+                        .await;
+                        self.notice(format!("DHT: {:?} | last round: {} queries, {} replies, {} tokens, {} announcements, {} candidate peers", net.discovery, net.queries, net.replies, net.tokens, net.announces, net.candidates)).await;
+                        self.notice(format!("Pending peer connections: {} | failed outbound attempts: {} | last failure: {}", net.pending_connections, net.failed_connections, net.last_failure.unwrap_or("none"))).await;
+                        if self.config.mode == TransportKind::Direct {
+                            self.notice("DHT replies do not prove that a peer TCP listener is reachable. Seedless cards need DHT discovery; allow DNS and outbound UDP, and inbound TCP to at least one participant's listener. No automatic NAT traversal.").await;
+                        }
+                    }
                     self.notice(format!(
                         "{} | peers: {} | identity memory locks: {:?} | persistent identity: {} | durable sending: {} | mailbox: {} | private administrator: {} | lobby scoped",
                         room.status, room.peers, room.memory, room.persistent, room.durable, room.mailbox,room.administrator

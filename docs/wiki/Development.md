@@ -26,7 +26,7 @@ A separate opt-in test uses a real external Tor daemon; see [Tor](Tor.md). Anoth
 cargo test -p nulllobby-direct --test live_dht -- --ignored
 ```
 
-Normal CI does not depend on public Tor or DHT availability.
+The live tests check both announcement acknowledgments and discovery by an independently initialized client. They do not establish cross-network TCP reachability. The deterministic suite uses separate loopback bootstrap/storage fixtures and exercises the default wildcard listener and seedless invitation through BitTorrent, BEP 10, Noise, identity proof and signed chat. Normal CI does not depend on public Tor or DHT availability.
 
 The optional Arti backend also has a live onion/Noise/storage/cleanup test:
 

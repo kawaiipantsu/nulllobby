@@ -436,6 +436,20 @@ impl State {
             "UNAVAILABLE"
         } else if lobby.is_some_and(|l| l.peers > 0) {
             "CONNECTED"
+        } else if lobby.is_some_and(|l| l.network.pending_connections > 0) {
+            "CONNECTING / NO PEERS"
+        } else if lobby.is_some_and(|l| {
+            matches!(
+                l.network.discovery,
+                nulllobby_core::domain::DiscoveryState::Starting
+                    | nulllobby_core::domain::DiscoveryState::Querying
+            )
+        }) {
+            "DISCOVERING / NO PEERS"
+        } else if lobby.is_some_and(|l| {
+            l.network.discovery == nulllobby_core::domain::DiscoveryState::Unavailable
+        }) {
+            "DHT UNAVAILABLE / NO PEERS"
         } else if lobby.is_some() {
             "LISTENING / NO PEERS"
         } else {

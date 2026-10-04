@@ -14,6 +14,132 @@ use std::{
 };
 use tokio::sync::mpsc;
 
+#[path = "../../../tests/support/dht.rs"]
+mod dht;
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn default_listeners_seedless_invite_discovery_and_encrypted_chat() {
+    let fixture = dht::Fixture::start().await;
+    let cfg = Config {
+        discovery_bootstrap: Some(vec![fixture.bootstrap]),
+        ..Default::default()
+    };
+    assert!(cfg.peers.is_empty());
+    assert!(!cfg.no_dht);
+    assert!(cfg.direct.listen.ip().is_unspecified());
+    assert_eq!(cfg.direct.listen.port(), 0);
+    let mut creator = Client::start(cfg.clone());
+    creator
+        .send(AppCommand::SetNickname(Nickname::new("creator").unwrap()))
+        .await;
+    creator
+        .send(AppCommand::CreatePublicLobby(
+            LobbyName::new("default workflow").unwrap(),
+        ))
+        .await;
+    let a = creator.view(|l| l.network.announces > 0).await;
+    let card = creator.card().await;
+    assert!(
+        card.seeds().is_empty(),
+        "default wildcard listener must not enter invite"
+    );
+    let mut joiner = Client::start(cfg);
+    joiner
+        .send(AppCommand::SetNickname(Nickname::new("joiner").unwrap()))
+        .await;
+    joiner.send(AppCommand::JoinLobby(card)).await;
+    let b = joiner
+        .view(|l| l.peers == 1 && l.members.len() == 2 && l.name == "default workflow")
+        .await;
+    assert_eq!(a.id, b.id);
+    assert_ne!(a.fingerprint, b.fingerprint);
+    joiner
+        .send(AppCommand::SendMessage {
+            lobby: b.id,
+            body: ValidatedText::new("default invite chat").unwrap(),
+        })
+        .await;
+    let (id, sender) = creator.message("default invite chat").await;
+    assert_eq!(id, b.id);
+    assert_eq!(sender, b.fingerprint);
+    assert!(fixture.announces.load(std::sync::atomic::Ordering::SeqCst) >= 2);
+    joiner.stop().await;
+    creator.stop().await;
+}
+
+#[tokio::test]
+async fn configured_peer_is_retried_after_initial_connection_failure() {
+    let reservation = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = reservation.local_addr().unwrap();
+    drop(reservation);
+    let card = LobbyCard::public(TransportKind::Direct, vec![]).unwrap();
+    let other_card = LobbyCard::parse(card.export().expose_secret()).unwrap();
+    let mut caller_config = config();
+    caller_config.peers.push(Endpoint::Direct {
+        address: address.ip(),
+        port: address.port().try_into().unwrap(),
+    });
+    let mut caller = Client::start(caller_config);
+    caller.send(AppCommand::JoinLobby(card)).await;
+    let failed = caller.view(|l| l.network.failed_connections > 0).await;
+    assert_eq!(failed.peers, 0);
+    assert_eq!(
+        failed.network.discovery,
+        nulllobby_core::domain::DiscoveryState::Disabled
+    );
+    assert_eq!(
+        failed.network.last_failure,
+        Some("Transport connect or peer handshake failed")
+    );
+    let mut server_config = config();
+    server_config.direct.listen = address;
+    let mut server = Client::start(server_config);
+    server.send(AppCommand::JoinLobby(other_card)).await;
+    server.view(|l| !l.members.is_empty()).await;
+    caller.send(AppCommand::Reconnect).await;
+    caller.view(|l| l.peers == 1).await;
+    caller.stop().await;
+    server.stop().await;
+}
+
+#[tokio::test]
+async fn unavailable_dht_is_visible_in_network_inspection() {
+    let reserved = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let std::net::SocketAddr::V4(seed) = reserved.local_addr().unwrap() else {
+        unreachable!()
+    };
+    // Bound socket intentionally never replies, so the request times out.
+    let mut client = Client::start(Config {
+        discovery_bootstrap: Some(vec![seed]),
+        ..Default::default()
+    });
+    client
+        .send(AppCommand::CreatePublicLobby(
+            LobbyName::new("discovery failure").unwrap(),
+        ))
+        .await;
+    let view = client
+        .view(|l| l.network.discovery == nulllobby_core::domain::DiscoveryState::Unavailable)
+        .await;
+    assert_eq!(view.network.queries, 1);
+    assert_eq!(view.network.replies, 0);
+    assert_eq!(view.network.announces, 0);
+    client
+        .send(AppCommand::Inspect(
+            nulllobby_core::domain::Inspection::Network,
+        ))
+        .await;
+    loop {
+        if let AppEvent::Notice { text, .. } = client.event().await
+            && text.contains("DHT: Unavailable")
+        {
+            assert!(text.contains("0 announcements"));
+            break;
+        }
+    }
+    client.stop().await;
+}
+
 struct Client {
     deadline: tokio::time::Instant,
     tx: mpsc::Sender<AppCommand>,
@@ -252,6 +378,7 @@ async fn successful_tor_lobbies_keep_endpoints_scoped_and_never_use_direct() {
             mode: TransportKind::Tor,
             tor: fixture.config.clone(),
             no_dht: false,
+            discovery_bootstrap: Some(vec!["127.0.0.1:9".parse().unwrap()]),
             ..Config::default()
         };
         let (tx, commands) = nulllobby_transport::command_channel();

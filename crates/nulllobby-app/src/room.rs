@@ -2,8 +2,8 @@ use crate::Config;
 use nulllobby_core::{
     EphemeralIdentity, Fingerprint, LobbyCard, LobbyId,
     domain::{
-        AppEvent, DeliveryState, LobbyName, LobbyTrust, LobbyView, MemberView, Nickname,
-        PaddingPolicy,
+        AppEvent, DeliveryState, DiscoveryState, LobbyName, LobbyNetworkView, LobbyTrust,
+        LobbyView, MemberView, Nickname, PaddingPolicy,
     },
     message::{Packet, Payload, SignedMessage},
     replay::ReplayGuard,
@@ -70,10 +70,15 @@ enum Net {
         outbound: bool,
         endpoint: Option<Endpoint>,
     },
-    Failed(Option<Endpoint>),
+    Failed(Endpoint, &'static str),
     Packet([u8; 32], u64, Packet),
     Closed([u8; 32], u64),
-    Discovered(Vec<Endpoint>),
+    Discovering,
+    Discovered(
+        Vec<Endpoint>,
+        nulllobby_direct::discovery::DiscoveryStats,
+        bool,
+    ),
 }
 struct Peer {
     tx: mpsc::Sender<Outbound>,
@@ -138,6 +143,8 @@ pub(crate) struct Room {
     seeds: Vec<Endpoint>,
     own: Endpoint,
     status: String,
+    network: LobbyNetworkView,
+    discovery_refresh: tokio::sync::watch::Sender<()>,
     persistent: bool,
     durable: bool,
     mailbox: bool,
@@ -220,6 +227,20 @@ impl Room {
             .map(Arc::new);
         let seeds = card.seeds().to_vec();
         let (net_tx, net_rx) = mpsc::channel(128);
+        let network = LobbyNetworkView {
+            listener: match &own {
+                Endpoint::Direct { address, port } => format!("{address}:{port}"),
+                Endpoint::Onion { .. } => "ephemeral onion service / loopback target".into(),
+            },
+            discovery: if card.transport() != TransportKind::Direct {
+                DiscoveryState::NotUsed
+            } else if config.no_dht {
+                DiscoveryState::Disabled
+            } else {
+                DiscoveryState::Starting
+            },
+            ..Default::default()
+        };
         let mut room = Self {
             card,
             identity,
@@ -248,6 +269,8 @@ impl Room {
             seeds,
             own,
             status: "Listening; encrypted sessions required".to_owned(),
+            network,
+            discovery_refresh: tokio::sync::watch::channel(()).0,
             persistent,
             durable,
             mailbox,
@@ -325,6 +348,10 @@ impl Room {
                 fingerprint: self.identity.fingerprint(),
                 memory: self.identity.memory_status(),
                 status: self.status.clone(),
+                network: LobbyNetworkView {
+                    pending_connections: self.dialing.len(),
+                    ..self.network.clone()
+                },
                 persistent: self.persistent,
                 durable: self.durable,
                 mailbox: self.mailbox,
@@ -386,8 +413,13 @@ impl Room {
         let local = self.local;
         self.tasks.spawn(async move {
             let result = async {
-                let stream = transport.connect(local, &endpoint).await.map_err(|_| ())?;
-                authenticate(stream, &identity, keys.as_deref(), true).await
+                let stream = transport
+                    .connect(local, &endpoint)
+                    .await
+                    .map_err(|_| "Transport connect or peer handshake failed")?;
+                authenticate(stream, &identity, keys.as_deref(), true)
+                    .await
+                    .map_err(|_| "Noise, lobby authentication or identity proof failed")
             }
             .await;
             let event = match result {
@@ -396,7 +428,7 @@ impl Room {
                     outbound: true,
                     endpoint: Some(endpoint),
                 },
-                Err(()) => Net::Failed(Some(endpoint)),
+                Err(category) => Net::Failed(endpoint, category),
             };
             let _ = tx.send(event).await;
         });
@@ -413,25 +445,56 @@ impl Room {
         };
         let observer = self.observer.clone();
         let tx = self.net_tx.clone();
+        let bootstrap = self.config.discovery_bootstrap.clone();
+        let mut refresh = self.discovery_refresh.subscribe();
         self.tasks.spawn(async move {
-            let Ok(mut discovery) =
-                nulllobby_direct::discovery::Discovery::start(observer, None).await
-            else {
-                let _ = tx.send(Net::Failed(None)).await;
+            if bootstrap.as_ref().is_some_and(|seeds| {
+                seeds.is_empty()
+                    || seeds.len() > 12
+                    || seeds.iter().any(|s| !s.ip().is_loopback() || s.port() == 0)
+            }) {
+                let _ = tx
+                    .send(Net::Discovered(vec![], Default::default(), false))
+                    .await;
                 return;
-            };
+            }
+            let mut discovery = None;
+            let mut rounds = 0u8;
             loop {
-                match discovery.discover_and_announce(scope, port).await {
-                    Ok(peers) => {
-                        if tx.send(Net::Discovered(peers)).await.is_err() {
-                            return;
-                        }
-                    }
-                    Err(_) => {
-                        let _ = tx.send(Net::Failed(None)).await;
-                    }
+                if tx.send(Net::Discovering).await.is_err() {
+                    return;
                 }
-                tokio::time::sleep(Duration::from_secs(120)).await;
+                if discovery.is_none() {
+                    discovery = nulllobby_direct::discovery::Discovery::start(
+                        observer.clone(),
+                        bootstrap.clone(),
+                    )
+                    .await
+                    .ok();
+                }
+                let (peers, stats, success) = if let Some(dht) = &mut discovery {
+                    let result = dht.discover_and_announce(scope, port).await;
+                    let success = result.is_ok() && dht.stats().announces > 0;
+                    (result.unwrap_or_default(), dht.stats(), success)
+                } else {
+                    (vec![], Default::default(), false)
+                };
+                if tx
+                    .send(Net::Discovered(peers, stats, success))
+                    .await
+                    .is_err()
+                {
+                    return;
+                }
+                rounds = rounds.saturating_add(1);
+                // Coalesce user refresh requests and enforce a minimum pause.
+                // Initial discovery and failed announcements retry promptly.
+                tokio::time::sleep(Duration::from_secs(10)).await;
+                let pause = if rounds < 3 || !success { 0 } else { 110 };
+                tokio::select! {
+                    _ = tokio::time::sleep(Duration::from_secs(pause)) => {},
+                    result = refresh.changed() => { if result.is_err() { return; } },
+                }
             }
         });
     }
@@ -754,7 +817,11 @@ impl Room {
                     .await;
                 self.reconnect();
             }
-            Some(Command::Reconnect) => self.reconnect(),
+            Some(Command::Reconnect) => {
+                self.reconnect();
+                self.discovery_refresh.send_replace(());
+                self.view().await;
+            }
             Some(command) => {
                 if matches!(command, Command::Stop) {
                     let _ = self.local(Payload::Leave).await;
@@ -775,7 +842,14 @@ impl Room {
         !self.closing
     }
     fn reconnect(&mut self) {
-        for endpoint in self.seeds.clone() {
+        let endpoints: Vec<_> = self
+            .seeds
+            .iter()
+            .chain(&self.config.peers)
+            .take(128)
+            .cloned()
+            .collect();
+        for endpoint in endpoints {
             self.dial(endpoint);
         }
         let endpoints: Vec<_> = self
@@ -810,28 +884,41 @@ impl Room {
                 }
                 self.connected(session, outbound).await;
             }
-            Net::Failed(endpoint) => {
-                if let Some(endpoint) = endpoint {
-                    self.dialing.retain(|e| *e != endpoint);
-                } else {
-                    self.notice("Direct DHT discovery unavailable; existing encrypted peer sessions remain usable").await;
-                }
+            Net::Failed(endpoint, category) => {
+                self.dialing.retain(|e| *e != endpoint);
+                self.network.failed_connections = self.network.failed_connections.saturating_add(1);
+                self.network.last_failure = Some(category);
                 if self.card.transport() == TransportKind::Tor
                     && self.peers.is_empty()
                     && self.dialing.is_empty()
                 {
                     self.status = "No reachable Tor lobby seed".to_owned();
                     self.notice(self.status.clone()).await;
-                    self.view().await;
                 }
+                self.view().await;
             }
-            Net::Discovered(peers) => {
+            Net::Discovering => {
+                self.network.discovery = DiscoveryState::Querying;
+                self.view().await;
+            }
+            Net::Discovered(peers, stats, success) => {
+                self.network.discovery = if success {
+                    DiscoveryState::Ready
+                } else {
+                    DiscoveryState::Unavailable
+                };
+                self.network.queries = stats.queries;
+                self.network.replies = stats.replies;
+                self.network.tokens = stats.tokens;
+                self.network.announces = stats.announces;
+                self.network.candidates = peers.len();
                 for endpoint in peers {
                     if !self.seeds.contains(&endpoint) && self.seeds.len() < 64 {
                         self.seeds.push(endpoint.clone());
                     }
                     self.dial(endpoint);
                 }
+                self.view().await;
             }
             Net::Closed(key, generation) => {
                 if self

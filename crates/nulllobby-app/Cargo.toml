@@ -25,6 +25,7 @@ libc.workspace = true
 workspace = true
 
 [dev-dependencies]
+bendy = "0.6.1"
 hmac.workspace = true
 sha2.workspace = true
 getrandom.workspace = true

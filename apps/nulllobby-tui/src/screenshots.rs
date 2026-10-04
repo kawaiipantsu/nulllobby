@@ -62,6 +62,7 @@ fn render_documentation() {
             mailbox: false,
             administrator: false,
             status: "Connected · synthetic documentation preview".into(),
+            network: Default::default(),
         },
         LobbyView {
             id: LobbyId::from_bytes([2; 32]),
@@ -76,6 +77,7 @@ fn render_documentation() {
             mailbox: false,
             administrator: false,
             status: "Listening".into(),
+            network: Default::default(),
         },
     ];
     for (fingerprint, nickname, body, verified) in [
