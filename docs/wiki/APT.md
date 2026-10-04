@@ -1,6 +1,6 @@
 # Official APT repository
 
-NullLobby Debian packages are published in the public [THUGS(red) APT repository](https://apt.thugs.red), suite **zerotrust**, component **main**. Version **0.5.0** is available for **amd64** in two variants:
+NullLobby Debian packages are published in the public [THUGS(red) APT repository](https://apt.thugs.red), suite **zerotrust**, component **main**. Version **0.5.1** is available for **amd64** in two variants:
 
 | Package | Tor backend |
 | --- | --- |
@@ -107,6 +107,14 @@ Repeating a successful publication verifies the existing packages without changi
 CI tests use synthetic credentials and signatures. Production APT credentials are not uploaded to GitHub. Publication runs from the authorized maintainer host, where the private management endpoint is reachable; GitHub-hosted runners are not assumed to have that access.
 
 ## Verification record
+
+### 0.5.1 — Debian 12
+
+On 2026-10-04, both variants were rebuilt with pinned Rust 1.94.1 and Debian 12 userspace. Their highest ELF glibc requirement is 2.34; package metadata declares the tested baseline `libc6 (>= 2.36)`. The signed GitHub artifacts were verified after downloading, then the exact packages were published to `zerotrust`. Public archive verification passed.
+
+Two clean Debian 12 containers installed the variants independently by name from `apt.thugs.red`, using the pinned archive key and `Signed-By`. Each APT download matched the signed release before installation. Both installed versions and offline diagnostics passed with glibc 2.36, including `HOME=/proc`. Containers share the host kernel; a separate Debian 12 host test remains with the project owner. See the [full build and verification record](https://github.com/kawaiipantsu/nulllobby/blob/main/docs/DEBIAN12-VERIFICATION.md).
+
+0.5.1 uses the same protocol/card v2 as 0.5.0. Upgrading between those versions does not require exchanging new invitation cards. Earlier published packages remain unchanged.
 
 ### 0.5.0
 
