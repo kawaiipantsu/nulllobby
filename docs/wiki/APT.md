@@ -1,6 +1,6 @@
 # Official APT repository
 
-NullLobby Debian packages are published in the public [THUGS(red) APT repository](https://apt.thugs.red), suite **zerotrust**, component **main**. Version **0.4.2** is available for **amd64** in two variants:
+NullLobby Debian packages are published in the public [THUGS(red) APT repository](https://apt.thugs.red), suite **zerotrust**, component **main**. Version **0.5.0** is available for **amd64** in two variants:
 
 | Package | Tor backend |
 | --- | --- |
@@ -8,6 +8,8 @@ NullLobby Debian packages are published in the public [THUGS(red) APT repository
 | `nulllobby-arti-experimental` | External Tor plus experimental embedded Arti |
 
 Choose one variant; both install `/usr/bin/nulllobby` and conflict with each other. These packages require glibc 2.39 or newer. Debian 13 and Ubuntu 24.04 meet that requirement; Debian 12 does not. The repository also supports arm64, but NullLobby has no arm64 release package yet. No independent professional security audit has been completed.
+
+**Upgrading from 0.4.x:** upgrade every lobby participant and distribute fresh v2 invitation cards. Older cards and peers are rejected. Identity persistence, durable delivery and peer mailboxes remain separate opt-in choices; installing the package enables none of them.
 
 ## Install
 
@@ -105,6 +107,21 @@ Repeating a successful publication verifies the existing packages without changi
 CI tests use synthetic credentials and signatures. Production APT credentials are not uploaded to GitHub. Publication runs from the authorized maintainer host, where the private management endpoint is reachable; GitHub-hosted runners are not assumed to have that access.
 
 ## Verification record
+
+### 0.5.0
+
+On 2026-10-04, both 0.5.0 variants were signed through XXC Trust, verified locally, downloaded from GitHub and checked again before publication. The APT publisher verified their GitHub digests, staged only these two versions and published them to `zerotrust`. Signed public archive metadata and both public downloads matched the signed release bytes. A separate `make apt-verify` passed.
+
+The local host was configured with the pinned archive key and repository-specific `Signed-By`. APT accepted `InRelease`, selected 0.5.0 from the public repository and downloaded the standard package. Its bytes matched the signed release before installation. APT upgraded the installed standard package from 0.4.2 to 0.5.0 without adding or removing other packages. The installed executable matched the signed package; version and offline diagnostics passed, including with `HOME=/proc`. Core-dump prevention and both tested secret memory locks reported active.
+
+SHA-256 of the published Debian packages:
+
+| Package | SHA-256 |
+| --- | --- |
+| `nulllobby_0.5.0_amd64.deb` | `95b6ba6c239fc7bce337f2fec0ca2a9fe7c5cc9be55c28d13a526fb84cf6d8ef` |
+| `nulllobby-arti-experimental_0.5.0_amd64.deb` | `accf9e6021069473352a0af0cacf0ad156ce4f0d12cf234744d9355ed8f429f8` |
+
+### 0.4.2
 
 On 2026-10-04, both 0.4.2 variants were published through the scoped API. Public downloads matched their GitHub release hashes. A separate APT run with an isolated source list, keyring, package lists and cache accepted `InRelease`, selected both 0.4.2 candidates and downloaded both packages with matching hashes. This check did not modify the host's system APT sources or installed packages. A repeated publisher run made no repository changes.
 

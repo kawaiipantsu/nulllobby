@@ -16,7 +16,17 @@ Vault use requires `libsecret-tools` and an unlocked, properly protected Linux S
 
 ## Build and distribution
 
-Standard Linux amd64 packages support Direct and external Tor. The separate experimental Arti package adds embedded Tor; choose one package. Neither installs a service, creates a vault or changes Tor configuration. Both retain the existing release-signing and official APT publishing workflow. Publication is a separate step from building these sources.
+Standard Linux amd64 packages support Direct and external Tor. The separate experimental Arti package adds embedded Tor; choose one package. Neither installs a service, creates a vault or changes Tor configuration. Both variants are published with signed checksum manifests on GitHub and in the official APT repository, suite `zerotrust`.
+
+For systems with the [APT repository configured](https://github.com/kawaiipantsu/nulllobby/wiki/APT):
+
+```sh
+sudo apt update
+sudo apt install nulllobby
+nulllobby --version
+```
+
+To build locally:
 
 ```sh
 make check
