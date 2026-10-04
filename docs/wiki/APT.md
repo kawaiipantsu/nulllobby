@@ -1,6 +1,6 @@
 # Official APT repository
 
-NullLobby Debian packages are published in the public [THUGS(red) APT repository](https://apt.thugs.red), suite **zerotrust**, component **main**. Version **0.5.2** is available for **amd64** in two variants:
+NullLobby Debian packages are published in the public [THUGS(red) APT repository](https://apt.thugs.red), suite **zerotrust**, component **main**. Version **0.5.3** is available for **amd64** in two variants:
 
 | Package | Tor backend |
 | --- | --- |
@@ -107,6 +107,21 @@ Repeating a successful publication verifies the existing packages without changi
 CI tests use synthetic credentials and signatures. Production APT credentials are not uploaded to GitHub. Publication runs from the authorized maintainer host, where the private management endpoint is reachable; GitHub-hosted runners are not assumed to have that access.
 
 ## Verification record
+
+### 0.5.3 — Live DHT header
+
+The Direct header now reports bootstrap, querying, ready, retry and disabled states without repeatedly opening `/network`. Counts update while requests are pending, reset per round and follow the selected lobby. See [connectivity](Connectivity) and the [synthetic renderer screenshot](Screenshots#live-direct-discovery).
+
+Formatting, all-target/all-feature Clippy with warnings denied, workspace tests (115 default; 119 all-feature), audit and deny passed locally. Tests hold an announcement reply pending to verify intermediate updates, then verify completion, round resets, narrow header layouts, lobby switching and Tor separation. Existing dependency exceptions remain unchanged. The independent [CI run](https://github.com/kawaiipantsu/nulllobby/actions/runs/37213969608) records hosted checks.
+
+Both variants were built in pinned Debian 12 userspace, installed separately in clean Debian 12 containers and passed offline diagnostics. Signed GitHub assets were downloaded and verified before publishing the exact two packages to `zerotrust`. Public signed metadata and both package bytes were checked by the publisher and a separate `apt-verify`. A clean Debian 12 container also installed the standard variant by name from the public APT repository and compared its download with the signed original.
+
+The maintainer host upgraded the standard package from 0.5.2 to 0.5.3 through APT without adding or removing other packages. Its installed executable matched the signed package; version and offline checks passed. Restart running clients to load the new header. Protocol/card v2 remains compatible with 0.5.0–0.5.2.
+
+| Package | SHA-256 |
+| --- | --- |
+| `nulllobby_0.5.3_amd64.deb` | `d4f2953032e7314e2845a3064ce3c64d2bc1cd066f969affa5034a048e55ab2c` |
+| `nulllobby-arti-experimental_0.5.3_amd64.deb` | `62cb2350667131923a654c8215e5d2da9fefda7ff6ecec865f2ca6cc591b9f9a` |
 
 ### 0.5.2 — Direct discovery
 
